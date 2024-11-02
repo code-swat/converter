@@ -1,0 +1,5 @@
+.venv
+.streamlit
+database.db
+*.pyc
+*.xlsx
