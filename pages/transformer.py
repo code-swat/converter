@@ -1,7 +1,6 @@
 import streamlit as st
 from typing import Dict
 from lib.parsers.base import BankParser
-from lib.api.datalab import recognize_tables
 import pandas as pd
 from io import BytesIO
 
@@ -9,7 +8,7 @@ from io import BytesIO
 if st.session_state.logged_in:
     st.title("PDF Transformer")
     
-    transform_option = st.selectbox(
+    selected_bank = st.selectbox(
         "Select a bank",
         BankParser.bank_names()
     )
@@ -21,11 +20,12 @@ if st.session_state.logged_in:
         
         if st.button("Process PDF"):
             with st.spinner("Processing PDF..."):                
+                recognize_tables = BankParser.get_parser_api(selected_bank)
                 tables_data = recognize_tables(uploaded_file)
 
                 if tables_data:
                     # Get the appropriate parser based on selection
-                    parser = BankParser.get_parser(transform_option)
+                    parser = BankParser.get_parser(selected_bank)
                     parsed_data = parser.parse(tables_data)
                     
                     if parsed_data:
@@ -47,7 +47,7 @@ if st.session_state.logged_in:
                         st.download_button(
                             label="Download Excel file",
                             data=excel_buffer,
-                            file_name=f"{transform_option}_statement.xlsx",
+                            file_name=f"{selected_bank}_statement.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
                     else:
