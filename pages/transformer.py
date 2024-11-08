@@ -32,8 +32,8 @@ if st.session_state.logged_in:
                         st.success("PDF processed successfully!")
                         
                         # Display data in a nice format
-                        st.subheader("Processed Data")
-                        st.write(parsed_data)
+                        #st.subheader("Processed Data")
+                        #st.write(parsed_data)
                         
                         # Convert to DataFrame and Excel
                         df = pd.DataFrame(parsed_data)
@@ -47,7 +47,7 @@ if st.session_state.logged_in:
                         st.download_button(
                             label="Download Excel file",
                             data=excel_buffer,
-                            file_name=f"{selected_bank}_statement.xlsx",
+                            file_name=f"{selected_bank}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
                     else:

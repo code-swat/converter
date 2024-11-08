@@ -9,9 +9,9 @@ def convert_to_canonical_format(data: Dict) -> Dict:
             "FECHA": row["Fecha"],
             "DETALLE": row["Descripción"].split('\n')[0] if row["Descripción"] else "",
             "REFERENCIA": '\n'.join(row["Descripción"].split('\n')[1:]) if row["Descripción"] else "",
-            "DEBITOS": row["Débito"].replace('.', ''), 
-            "CREDITOS": row["Crédito"].replace('.', ''),
-            "SALDO": row["Saldo"].replace('.', ',')
+            "DEBITOS": float(row["Débito"].replace('.', '').replace(',', '.')) if row["Débito"] else "",
+            "CREDITOS": float(row["Crédito"].replace('.', '').replace(',', '.')) if row["Crédito"] else "",
+            "SALDO": float(row["Saldo"].replace('.', '').replace(',', '.')) / 100.0 if row["Saldo"] else ""
         }
 
         canonical_rows.append(canonical_row)
