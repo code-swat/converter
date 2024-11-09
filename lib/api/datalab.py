@@ -3,7 +3,7 @@ import streamlit as st
 from typing import Dict
 import time
 
-def recognize_tables(uploaded_file: bytes) -> Dict:
+def parse(uploaded_file: bytes) -> Dict:
     """Call the DataLab API to recognize tables in the PDF."""
     api_endpoint = "https://www.datalab.to/api/v1/table_rec"
     api_key = st.secrets.datalab.api_key

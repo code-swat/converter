@@ -14,19 +14,24 @@ if st.session_state.logged_in:
     )
     
     uploaded_file = st.file_uploader("Upload your PDF", type=['pdf'])
+
+    st.write(f"{selected_bank} status: {BankParser.get_parser_status(selected_bank)}")
     
     if uploaded_file is not None:
         st.write("File uploaded successfully!")
         
         if st.button("Process PDF"):
             with st.spinner("Processing PDF..."):                
-                recognize_tables = BankParser.get_parser_api(selected_bank)
-                tables_data = recognize_tables(uploaded_file)
+                parser = BankParser.get_parser_api(selected_bank)
+                data = parser(uploaded_file)
 
-                if tables_data:
+                if data:
                     # Get the appropriate parser based on selection
                     parser = BankParser.get_parser(selected_bank)
-                    parsed_data = parser.parse(tables_data)
+                    # st.write(data)
+                    parsed_data = parser.parse(data)
+                    st.write("Parsed data")
+                    st.write(parsed_data)
                     
                     if parsed_data:
                         st.success("PDF processed successfully!")
@@ -47,7 +52,7 @@ if st.session_state.logged_in:
                         st.download_button(
                             label="Download Excel file",
                             data=excel_buffer,
-                            file_name=f"{selected_bank}_statement.xlsx",
+                            file_name=f"{selected_bank}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
                     else:
