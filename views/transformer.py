@@ -43,8 +43,8 @@ if st.session_state.logged_in:
                         st.success("PDF processed successfully!")
                         
                         # Display data in a nice format
-                        st.subheader("Processed Data")
-                        st.write(parsed_data)
+                        #st.subheader("Processed Data")
+                        #st.write(parsed_data)
                         
                         # Convert to DataFrame and Excel
                         df = pd.DataFrame(parsed_data)
