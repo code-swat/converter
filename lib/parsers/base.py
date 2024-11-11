@@ -2,7 +2,7 @@ from lib.api.datalab import parse as datalab_parse
 from lib.api.datalab_ocr import parse as datalab_ocr_parse
 from lib.api.file import parse as file_parse
 from lib.api.file_tables import parse as file_tables_parse
-from lib.api.file_ocr import parse as file_ocr_parse
+#from lib.api.file_ocr import parse as file_ocr_parse
 from lib.api.llamaparse import parse as llama_parse
 
 from lib.parsers.bbva import BBVAParser

@@ -13,9 +13,9 @@ def logout():
     st.session_state.logged_in = False
     st.rerun()
 
-login_page = st.Page('pages/login.py', title="Log in", icon=":material/login:")
+login_page = st.Page('views/login.py', title="Log in", icon=":material/login:")
 logout_page = st.Page(logout, title="Log out", icon=":material/logout:")
-transformer_page = st.Page('pages/transformer.py', title="Transformer", icon=":material/dashboard:")
+transformer_page = st.Page('views/transformer.py', title="Transformer", icon=":material/dashboard:")
 
 if st.session_state.logged_in:
     pg = st.navigation([transformer_page, logout_page])
