@@ -23,7 +23,7 @@ parser_map = {
     "BBVA": (BBVAParser, file_parse, "✅"),
     "BPN": (BPNParser, file_parse, "✅"),
     "Comafi": (ComafiParser, file_parse, "❌"),
-    "Credicoop": (CredicoopParser, file_parse, "✅"),
+    "Credicoop": (CredicoopParser, file_parse, "❌"),
     "Galicia": (GaliciaParser, file_parse, "✅"),
     "HSBC": (HSBCParser, file_parse, "✅"),
     "ICBC": (ICBCParser, file_parse, "❌"),
