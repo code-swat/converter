@@ -15,7 +15,7 @@ def verify_password_local(username, password):
         return result is not None
 
 def verify_password_api(username, password):
-    api_url = "https://devapi.sigeweb.net/oauth/token"
+    api_url = "https://api.sigeweb.net/oauth/token"
 
     try:
         credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
