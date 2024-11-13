@@ -20,8 +20,8 @@ def convert_to_canonical_format(data: Dict) -> Dict:
     return canonical_rows
 
 class HSBCParser:
-    def parse(self, data: List[str]) -> List[Dict[str, str]]:
-        #st.write(data)
+    def parse(self, data: List[str]) -> List[List[Dict[str, str]]]:
+        st.write(data)
         records = []
         current_date = ""
         previous_saldo = None

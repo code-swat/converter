@@ -20,7 +20,7 @@ def convert_to_canonical_format(data: Dict) -> Dict:
     return canonical_rows
 
 class SantanderParser:
-    def parse(self, data: List[str]) -> List[Dict]:
+    def parse(self, data: List[str]) -> List[List[Dict[str, str]]]:
         data_str = self.clean_pages(data)
         lines = data_str.split('\n')
 
@@ -138,7 +138,7 @@ class SantanderParser:
             debito = ''
             credito = ''
         
-        return convert_to_canonical_format(transactions)
+        return [convert_to_canonical_format(transactions)]
 
     def parse_amount(self, amount_str):
         amount_str = amount_str.replace(' ', '').replace('pesos', '').replace('menos', '-')

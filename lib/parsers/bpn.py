@@ -27,7 +27,7 @@ def convert_to_canonical_format(data: Dict) -> Dict:
     return canonical_rows
 
 class BPNParser:
-    def parse(self, data: List[str]) -> List[Dict[str, str]]:
+    def parse(self, data: List[str]) -> List[List[Dict[str, str]]]:
         transactions = []
         saldo_anterior = None
         saldo_actual = None

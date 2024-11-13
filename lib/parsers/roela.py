@@ -36,7 +36,7 @@ def is_saldo_line(line: str) -> bool:
     return line.strip().lower().startswith('saldo al ')
 
 class RoelaParser:
-    def parse(self, data: List[str]) -> List[Dict[str, str]]:
+    def parse(self, data: List[str]) -> List[List[Dict[str, str]]]:
         # Combine all data strings into a single list of lines
         lines = []
 

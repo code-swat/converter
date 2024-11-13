@@ -20,7 +20,7 @@ def convert_to_canonical_format(data: Dict) -> Dict:
     return canonical_rows
 
 class NacionParser:
-    def parse(self, data: List[str]) -> List[Dict]:
+    def parse(self, data: List[str]) -> List[List[Dict[str, str]]]:
         # Combine all lines into a single string if data is a list of strings
         text = "\n".join(data)
         
@@ -130,7 +130,7 @@ class NacionParser:
                 }
                 records.append(record)
         
-        return convert_to_canonical_format(records)
+        return [convert_to_canonical_format(records)]
     
     def _convert_currency(self, value: str) -> float:
         """

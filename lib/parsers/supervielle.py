@@ -42,7 +42,7 @@ class SupervielleParser:
         except ValueError:
             return None
 
-    def parse(self, data: List[str]) -> List[List[Dict]]:
+    def parse(self, data: List[str]) -> List[List[Dict[str, str]]]:
         accounts = []  # List to hold all accounts
         current_account = []  # Current account's transactions
         in_subtotal = False

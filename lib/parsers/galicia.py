@@ -20,7 +20,7 @@ def convert_to_canonical_format(data: Dict) -> Dict:
     return canonical_rows
 
 class GaliciaParser:
-    def parse(self, data: List[str]) -> List[Dict[str, str]]:
+    def parse(self, data: List[str]) -> List[List[Dict[str, str]]]:
         """
         Parses the provided bank statement data and extracts transaction details.
 
