@@ -9,15 +9,22 @@ from io import BytesIO
 
 if st.session_state.logged_in:
     st.title("PDF Transformer")
+
+    previous_bank = None
     
     selected_bank = st.selectbox(
         "Select a bank",
-        BankParser.bank_names()
+        BankParser.bank_names(),
+        key="bank_select"
     )
     
     uploaded_file = st.file_uploader("Upload your PDF", type=['pdf'])
 
     st.write(f"{selected_bank} status: {BankParser.get_parser_status(selected_bank)}")
+
+    if 'processed_data' not in st.session_state or previous_bank != selected_bank:
+        st.session_state.processed_data = None
+        previous_bank = selected_bank
     
     if uploaded_file is not None:
         st.write("File uploaded successfully!")
@@ -29,37 +36,38 @@ if st.session_state.logged_in:
                 data = parser(bytes_data)
 
                 if data:
-                    # Get the appropriate parser based on selection
                     parser = BankParser.get_parser(selected_bank)
-                    # st.write(data)
                     parsed_data = parser.parse(data)
                     
                     if parsed_data:
-                        stats = stats(bytes_data)
-
-                        stats['bank'] = selected_bank
-
-                        usage_tracker.record_conversion(stats)
+                        file_stats = stats(bytes_data)
+                        file_stats['bank'] = selected_bank
+                        usage_tracker.record_conversion(file_stats)
                         st.success("PDF processed successfully!")
-                        
-                        # Display data in a nice format
-                        #st.subheader("Processed Data")
-                        #st.write(parsed_data)
-                        
-                        # Convert to DataFrame and Excel
-                        df = pd.DataFrame(parsed_data)
-                        
-                        # Create Excel file in memory
-                        excel_buffer = BytesIO()
-                        df.to_excel(excel_buffer, index=False, engine='openpyxl')
-                        excel_buffer.seek(0)
-                        
-                        # Download button
-                        st.download_button(
-                            label="Download Excel file",
-                            data=excel_buffer,
-                            file_name=f"{selected_bank}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
+                        st.session_state.processed_data = parsed_data
                     else:
                         st.error("Error parsing the data")
+                        st.session_state.processed_data = None
+                else:
+                    st.error("Error processing the PDF")
+                    st.session_state.processed_data = None
+
+    # Display download buttons if data has been processed
+    if st.session_state.processed_data:
+        file_name = uploaded_file.name.rsplit('.', 1)[0]
+
+        for account_index, account_data in enumerate(st.session_state.processed_data, 1):
+            st.subheader(f"Account {account_index}")
+            
+            df = pd.DataFrame(account_data)
+            
+            excel_buffer = BytesIO()
+            df.to_excel(excel_buffer, index=False, engine='openpyxl')
+            excel_buffer.seek(0)
+            
+            st.download_button(
+                label=f"Download Excel file - Account {account_index}",
+                data=excel_buffer,
+                file_name=f"{file_name}_{account_index}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )

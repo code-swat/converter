@@ -1,4 +1,3 @@
-import streamlit as st
 from typing import List, Dict
 import re
 
@@ -16,7 +15,7 @@ def convert_to_canonical_format(data: Dict) -> Dict:
                 "REFERENCIA": "\n".join([x for x in [row["Comprobante"], row["Concepto"]] if x]),
                 "DEBITOS": "",
                 "CREDITOS": "",
-                "SALDO": f"{saldo:,.2f}".replace(',', '@').replace('.', ',').replace('@', '.')
+                "SALDO": saldo
             }
         else:
             saldo += importe
@@ -24,19 +23,23 @@ def convert_to_canonical_format(data: Dict) -> Dict:
                 "FECHA": row["Fecha"],
                 "DETALLE": row["Descripción"],
                 "REFERENCIA": "\n".join([x for x in [row["Comprobante"], row["Concepto"]] if x]),
-                "DEBITOS": f"{importe:.2f}".replace('.', ',') if importe < 0 else "",
-                "CREDITOS": f"{importe:.2f}".replace('.', ',') if importe > 0 else "",
-                "SALDO": f"{saldo:.2f}".replace('.', ',')
+                "DEBITOS": importe * -1 if importe < 0 else "",
+                "CREDITOS": importe if importe > 0 else "",
+                "SALDO": saldo
             }
 
         canonical_rows.append(canonical_row)
 
     return canonical_rows
 
+def is_saldo_line(line: str) -> bool:
+    return line.strip().lower().startswith('saldo al ')
+
 class RoelaParser:
     def parse(self, data: List[str]) -> List[Dict[str, str]]:
         # Combine all data strings into a single list of lines
         lines = []
+
         for block in data:
             lines.extend(block.split('\n'))
 
@@ -63,6 +66,12 @@ class RoelaParser:
         # Parse entries
         while current_index < len(lines):
             line = lines[current_index].strip()
+            
+            # Skip "Saldo al" lines and their amount
+            if is_saldo_line(line):
+                current_index += 2  # Skip both the saldo line and its amount
+                continue
+                
             if not is_importe(line):
                 current_index += 1
                 continue
@@ -79,8 +88,20 @@ class RoelaParser:
             current_index += 1
             if current_index >= len(lines):
                 break
-            descripcion = lines[current_index].strip()
+            descripcion = [lines[current_index].strip()]  # Start with first line
 
+            # Check for additional description lines
+            while current_index + 1 < len(lines):
+                next_line = lines[current_index + 1].strip()
+                # If next line is not a date and not a number, it's part of the description
+                if not is_date(next_line) and not next_line.isdigit():
+                    descripcion.append(next_line)
+                    current_index += 1
+                else:
+                    break
+
+            descripcion = "\n".join(descripcion)  # Join all description lines
+            
             # Move to next line to check for Concepto or Fecha
             current_index += 1
             if current_index >= len(lines):
@@ -88,30 +109,40 @@ class RoelaParser:
                 concepto = ""
                 comprobante = ""
             else:
+                # Initialize variables
+                fecha = ""
+                concepto = ""
+                comprobante = ""
+                
+                # Check next line
                 next_line = lines[current_index].strip()
+                current_index += 1
+                
+                # If it's a date, we're done - no concepto or comprobante
                 if is_date(next_line):
-                    # No Concepto and Comprobante
-                    concepto = ""
-                    comprobante = ""
                     fecha = next_line
-                    current_index += 1
                 else:
-                    # Concepto
+                    # It must be concepto
                     concepto = next_line
-                    # Move to Comprobante
-                    current_index += 1
-                    if current_index >= len(lines):
-                        comprobante = ""
-                        fecha = ""
-                    else:
-                        comprobante = lines[current_index].strip()
-                        # Move to Fecha
+                    
+                    # Check for comprobante
+                    if current_index < len(lines):
+                        next_line = lines[current_index].strip()
                         current_index += 1
-                        if current_index >= len(lines):
-                            fecha = ""
+                        
+                        # If it's a date, we're done - no comprobante
+                        if is_date(next_line):
+                            fecha = next_line
                         else:
-                            fecha = lines[current_index].strip()
-                            current_index += 1
+                            # It must be comprobante
+                            comprobante = next_line
+                            
+                            # Finally, check for fecha
+                            if current_index < len(lines):
+                                next_line = lines[current_index].strip()
+                                current_index += 1
+                                if is_date(next_line):
+                                    fecha = next_line
 
             # Append the transaction dictionary
             transaction = {
@@ -123,7 +154,7 @@ class RoelaParser:
             }
             transactions.append(transaction)
 
-        return convert_to_canonical_format(transactions)
+        return [convert_to_canonical_format(transactions)]
 
 
 

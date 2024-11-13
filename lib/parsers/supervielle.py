@@ -1,17 +1,23 @@
 import re
 from typing import List, Dict
-import streamlit as st
+
 def convert_to_canonical_format(data: Dict) -> Dict:
     canonical_rows = []
 
     for row in data:
+        saldo = row["Saldo"]
+        if saldo:
+            saldo = float(saldo.rstrip('-').replace('.', '').replace(',', '.'))
+        else:
+            saldo = ""
+
         canonical_row = {
             "FECHA": row["Fecha"],
             "DETALLE": row["Concepto"],
             "REFERENCIA": row["Referencia"],
             "DEBITOS": float(row["Débito"].replace('.', '').replace(',', '.')) if row["Débito"] else "", 
             "CREDITOS": float(row["Crédito"].replace('.', '').replace(',', '.')) if row["Crédito"] else "",
-            "SALDO": float(row["Saldo"].replace('.', '').replace(',', '.')) if row["Saldo"] else ""
+            "SALDO": saldo * -1 if "-" in row["Saldo"] else saldo
         }
 
         canonical_rows.append(canonical_row)
@@ -20,18 +26,27 @@ def convert_to_canonical_format(data: Dict) -> Dict:
 
 class SupervielleParser:
     def parse_currency(self, s: str) -> float:
-        """Converts a Spanish-formatted currency string to a float."""
+        """
+        Converts a Spanish-formatted currency string to a float.
+        Handles negative numbers indicated by a trailing minus sign.
+        """
+        s = s.strip()
+        is_negative = False
+        if s.endswith('-'):
+            is_negative = True
+            s = s[:-1]  # Remove the trailing minus sign
         s = s.replace('.', '').replace(',', '.')
         try:
-            return float(s)
+            value = float(s)
+            return -value if is_negative else value
         except ValueError:
             return None
 
-    def parse(self, data: List[str]) -> List[Dict]:
-        entries = []
+    def parse(self, data: List[str]) -> List[List[Dict]]:
+        accounts = []  # List to hold all accounts
+        current_account = []  # Current account's transactions
         in_subtotal = False
         in_entries = False
-        stop_parsing = False
 
         previous_saldo_float = None
 
@@ -48,36 +63,43 @@ class SupervielleParser:
             if not line:
                 i += 1
                 continue
-            if stop_parsing:
-                break
-            if not in_entries:
-                # Check for "Saldo del período anterior"
-                if "Saldo del período anterior" in line:
-                    # Extract the saldo
-                    match = re.search(r"Saldo del período anterior\s+([\d.,]+)", line)
-                    if match:
-                        saldo = match.group(1)
-                        entries.append({
-                            "Fecha": "",
-                            "Concepto": "Saldo del período anterior",
-                            "Referencia": "",
-                            "Débito": "",
-                            "Crédito": "",
-                            "Saldo": saldo
-                        })
-                        previous_saldo_float = self.parse_currency(saldo)
-                        in_entries = True
-                    else:
-                        i += 1
-                    continue
+            # Check for "Saldo del período anterior" to start a new account
+            if "Saldo del período anterior" in line:
+                # If there's an existing account being processed, add it to accounts
+                if current_account:
+                    accounts.append(convert_to_canonical_format(current_account))
+                    current_account = []
+                in_entries = False  # Reset entries flag for new account
+                in_subtotal = False  # Reset subtotal flag for new account
+                # Extract the saldo
+                match = re.search(r"Saldo del período anterior\s+([\d.,]+-?)", line)
+                if match:
+                    saldo = match.group(1)
+                    current_account.append({
+                        "Fecha": "",
+                        "Concepto": "Saldo del período anterior",
+                        "Referencia": "",
+                        "Débito": "",
+                        "Crédito": "",
+                        "Saldo": saldo
+                    })
+                    previous_saldo_float = self.parse_currency(saldo)
+                    in_entries = True
                 else:
-                    i += 1
-                    continue
-            else:
+                    # If "Saldo del período anterior" is found but saldo is not parsed, skip
+                    pass
+                i += 1
+                continue
+
+            if in_entries:
                 # Check for "SALDO PERIODO ACTUAL"
                 if "SALDO PERIODO ACTUAL" in line:
-                    stop_parsing = True
-                    break
+                    # Finish the current account
+                    if current_account:
+                        accounts.append(convert_to_canonical_format(current_account))
+                        current_account = []
+                    i += 1
+                    continue
                 # Check for "SUBTOTAL"
                 if line.startswith("SUBTOTAL"):
                     if not in_subtotal:
@@ -89,13 +111,15 @@ class SupervielleParser:
                 if in_subtotal:
                     i += 1
                     continue
+
                 # Process transaction lines
                 match = re.match(r"(\d{2}/\d{2}/\d{2})\s+(.*)", line)
                 if match:
                     fecha = match.group(1)
                     rest_of_line = match.group(2)
-                    # Extract amounts at the end of the line
-                    num_pattern = r'([\d.,]+)\s+([\d.,]+)$'
+                    # Extract amounts at the end of the line, possibly with negative saldo
+                    # Pattern: amount, then saldo which may end with '-'
+                    num_pattern = r'([\d.,]+)\s+([\d.,]+-?)$'
                     num_match = re.search(num_pattern, rest_of_line)
                     if num_match:
                         amount_str = num_match.group(1)
@@ -103,7 +127,8 @@ class SupervielleParser:
                         # Remove the amounts from rest_of_line
                         rest_of_line_no_amounts = rest_of_line[:num_match.start()].strip()
                         # Extract referencia
-                        ref_pattern = r'(.*?)(R \d+|\d{10})$'
+                        # Updated pattern to include possible asterisks after digits
+                        ref_pattern = r'(.*?)(R \d+\**|\d+\**)$'
                         ref_match = re.match(ref_pattern, rest_of_line_no_amounts)
                         if ref_match:
                             concepto = ref_match.group(1).strip()
@@ -116,7 +141,8 @@ class SupervielleParser:
                         i += 1
                         while i < len(lines):
                             next_line = lines[i].strip()
-                            if not next_line or re.match(r"\d{2}/\d{2}/\d{2}", next_line) or next_line.startswith("SUBTOTAL") or "SALDO PERIODO ACTUAL" in next_line:
+                            ignore_lines = ["Imp Ley 25413", "SUBTOTAL", "SALDO PERIODO ACTUAL", "Saldo del período anterior"]
+                            if not next_line or re.match(r"\d{2}/\d{2}/\d{2}", next_line) or any(ignore_line in next_line for ignore_line in ignore_lines):
                                 break
                             else:
                                 concepto_lines.append(next_line)
@@ -125,8 +151,16 @@ class SupervielleParser:
                         amount_float = self.parse_currency(amount_str)
                         saldo_float = self.parse_currency(saldo_str)
                         # Determine if Débito or Crédito
-                        is_credit = abs((previous_saldo_float + amount_float) - saldo_float) < 0.01
-                        is_debit = abs((previous_saldo_float - amount_float) - saldo_float) < 0.01
+                        is_credit = False
+                        is_debit = False
+                        if previous_saldo_float is not None and saldo_float is not None and amount_float is not None:
+                            # Check for Crédito: previous_saldo + amount == current_saldo
+                            if abs((previous_saldo_float + amount_float) - saldo_float) < 0.01:
+                                is_credit = True
+                            # Check for Débito: previous_saldo - amount == current_saldo
+                            if abs((previous_saldo_float - amount_float) - saldo_float) < 0.01:
+                                is_debit = True
+                        # Assign values based on determination
                         if is_credit and not is_debit:
                             entry = {
                                 "Fecha": fecha,
@@ -155,7 +189,7 @@ class SupervielleParser:
                                 "Crédito": "",
                                 "Saldo": saldo_str
                             }
-                        entries.append(entry)
+                        current_account.append(entry)
                         previous_saldo_float = saldo_float
                         continue
                     else:
@@ -164,8 +198,17 @@ class SupervielleParser:
                 else:
                     i += 1
                     continue
+            else:
+                # Not currently in an account's entries; skip
+                i += 1
+                continue
             i += 1
-        return convert_to_canonical_format(entries)
+
+        # After processing all lines, add the last account if it exists
+        if current_account:
+            accounts.append(convert_to_canonical_format(current_account))
+
+        return accounts
 
 
 expected_output = [

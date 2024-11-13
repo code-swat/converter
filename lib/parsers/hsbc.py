@@ -79,7 +79,12 @@ class HSBCParser:
 
             # Stop processing at "- SALDO FINAL"
             #if line.startswith("- SALDO FINAL"):
-            if "- RESUMEN DE ACUERDOS -" in line:
+            ending_lines = [
+                "- RESUMEN DE ACUERDOS -",
+                "- CALCULO DE INTERESES POR DESCUBIERTO -",
+                "- DETALLE DE INTERESES DEVENGADOS Y DEBITADOS -"
+            ]
+            if any(ending_line in line for ending_line in ending_lines):
                 break
 
             # Handle "SALDO ANTERIOR"
@@ -127,7 +132,7 @@ class HSBCParser:
             if records:
                 records[-1]['REFERENCIA'] += '\n' + line
 
-        return convert_to_canonical_format(records)
+        return [convert_to_canonical_format(records)]
 
     def parse_transaction_line(self, line: str, current_date: str, previous_saldo: float) -> Dict[str, str]:
         record = {

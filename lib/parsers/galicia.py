@@ -1,4 +1,5 @@
 import re
+
 from typing import Dict, List
 
 def convert_to_canonical_format(data: Dict) -> Dict:
@@ -9,9 +10,9 @@ def convert_to_canonical_format(data: Dict) -> Dict:
             "FECHA": row["Fecha"],
             "DETALLE": row["Descripción"].split('\n')[0] if row["Descripción"] else "",
             "REFERENCIA": '\n'.join(row["Descripción"].split('\n')[1:]) if row["Descripción"] else "",
-            "DEBITOS": float(row["Débito"].replace('.', '').replace(',', '.')) if row["Débito"] else "",
+            "DEBITOS": float(row["Débito"].lstrip('-').replace('.', '').replace(',', '.')) if row["Débito"] else "",
             "CREDITOS": float(row["Crédito"].replace('.', '').replace(',', '.')) if row["Crédito"] else "",
-            "SALDO": float(row["Saldo"].replace('.', '').replace(',', '.')) / 100.0 if row["Saldo"] else ""
+            "SALDO": float(row["Saldo"].replace('.', '').replace(',', '')) / 100.0 if row["Saldo"] else ""
         }
 
         canonical_rows.append(canonical_row)
@@ -29,7 +30,7 @@ class GaliciaParser:
         Returns:
             List[Dict[str, str]]: A list of dictionaries, each representing a transaction.
         """
-        
+        #st.write(data)
         # Concatenate all data into a single string and split into lines
         full_text = "\n".join(data)
         lines = full_text.split("\n")
@@ -45,6 +46,32 @@ class GaliciaParser:
         i = 0
         total_lines = len(lines)
         
+        # Add initial balance detection
+        for i, line in enumerate(lines):
+            if "Período de movimientos" in line:
+                # Skip the first currency value
+                while i < total_lines and not currency_pattern.match(lines[i].replace('$', '').strip()):
+                    i += 1
+                i += 1  # Skip the first currency value
+                
+                # Get the second currency value (initial balance)
+                while i < total_lines and not currency_pattern.match(lines[i].replace('$', '').strip()):
+                    i += 1
+                
+                if i < total_lines:
+                    initial_balance = lines[i].replace('$', '').strip()
+                    initial_transaction = {
+                        'Fecha': '',
+                        'Descripción': 'Saldo inicial',
+                        'Origen': '',
+                        'Crédito': '',
+                        'Débito': '',
+                        'Saldo': initial_balance
+                    }
+                    transactions.append(initial_transaction)
+                break
+        
+        i = 0  # Reset counter for main parsing loop
         while i < total_lines:
             line = lines[i].strip()
             
@@ -127,4 +154,4 @@ class GaliciaParser:
                 # If the line doesn't match a date, skip it
                 i += 1
         
-        return convert_to_canonical_format(transactions)
+        return [convert_to_canonical_format(transactions)]

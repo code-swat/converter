@@ -17,9 +17,9 @@ def convert_to_canonical_format(data: Dict) -> Dict:
             "FECHA": row["Fecha"],
             "DETALLE": detalle,
             "REFERENCIA": referencia,
-            "DEBITOS": row["Débito"].replace('.', ''), 
-            "CREDITOS": row["Crédito"].replace('.', ''),
-            "SALDO": row["Saldo"].replace('.', ',')
+            "DEBITOS": float(row["Débito"].replace('.', '').replace(',', '.')) if row["Débito"] else '', 
+            "CREDITOS": float(row["Crédito"].replace('.', '').replace(',', '.')) if row["Crédito"] else '',
+            "SALDO": float(row["Saldo"]) if row["Saldo"] else ''
         }
 
         canonical_rows.append(canonical_row)
@@ -64,7 +64,7 @@ class BPNParser:
                         "Comprobante": "",
                         "Débito": "",
                         "Crédito": "",
-                        "Saldo": saldo_str
+                        "Saldo": saldo_str.replace('.', '').replace(',', '.')
                     })
                     saldo_actual = saldo_anterior
                     parsing = True
@@ -122,7 +122,7 @@ class BPNParser:
                 if saldo is not None:
                     saldo_actual = saldo
 
-        return convert_to_canonical_format(transactions)
+        return [convert_to_canonical_format(transactions)]
 
     def _parse_currency(self, amount_str: str) -> float:
         """

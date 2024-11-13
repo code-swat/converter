@@ -11,9 +11,9 @@ def convert_to_canonical_format(data: Dict) -> Dict:
             "FECHA": row["FECHA"],
             "DETALLE": row["CONCEPTO"],
             "REFERENCIA": row["ORIGEN"],
-            "DEBITOS": row["DÉBITO"].replace('.', ''), 
-            "CREDITOS": row["CRÉDITO"].replace('.', ''),
-            "SALDO": row["SALDO"].replace('.', ',')
+            "DEBITOS": float(row["DÉBITO"].lstrip('-').replace('.', '').replace(',', '.')) if row["DÉBITO"] else '',
+            "CREDITOS": float(row["CRÉDITO"].replace('.', '').replace(',', '.')) if row["CRÉDITO"] else '',
+            "SALDO": float(row["SALDO"].replace('.', '').replace(',', '.')) if row["SALDO"] else ''
         }
 
         canonical_rows.append(canonical_row)
@@ -21,42 +21,67 @@ def convert_to_canonical_format(data: Dict) -> Dict:
     return canonical_rows
 
 class BBVAParser:
-    def parse(self, data: List[str]) -> List[Dict[str, str]]:
+    # Define date_regex as a class variable
+    date_regex = re.compile(r'^(\d{2}/\d{2})(/\d{4})?$')
+
+    def parse(self, data: List[str]) -> List[List[Dict[str, str]]]:
         # Combine all data into a single string
         raw_text = "\n".join(data)
         
-        # Extract year from "Información al: dd/mm/yyyy"
+        # Extract year
         year_matches = re.findall(r'Información al: \d{2}/\d{2}/(\d{4})', raw_text)
         if year_matches:
-            # Use the latest year found
             year = max(int(y) for y in year_matches)
         else:
-            # Default to current year
             year = datetime.now().year
-        
-        # Find the start and end of "Movimientos en cuentas" section
+
+        # Find the initial "Movimientos en cuentas" section
         movimientos_start = re.search(r'Movimientos en cuentas', raw_text, re.IGNORECASE)
-        movimientos_end = re.search(r'TOTAL MOVIMIENTOS', raw_text, re.IGNORECASE)
-        
-        if not movimientos_start or not movimientos_end:
-            st.error("No se encontró la sección de 'Movimientos en cuentas' o 'TOTAL MOVIMIENTOS'.")
+        if not movimientos_start:
             return []
+            
+        # Start processing from after "Movimientos en cuentas"
+        current_pos = movimientos_start.end()
+        all_transactions = []
         
-        # Extract the movimientos section
-        movimientos_text = raw_text[movimientos_start.end():movimientos_end.start()]
+        while True:
+            # Find next "SALDO ANTERIOR" section
+            saldo_anterior_start = re.search(r'SALDO ANTERIOR', raw_text[current_pos:], re.IGNORECASE)
+            if not saldo_anterior_start:
+                break
+                
+            # Update current position to start of this section
+            current_pos += saldo_anterior_start.start()
+            
+            # Find next "TOTAL MOVIMIENTOS"
+            movimientos_end = re.search(r'TOTAL MOVIMIENTOS', raw_text[current_pos:], re.IGNORECASE)
+            if not movimientos_end:
+                break
+                
+            # Extract the account section
+            account_text = raw_text[current_pos:current_pos + movimientos_end.end()]
+            
+            # Update position for next iteration
+            current_pos += movimientos_end.end()
+            
+            # Process this section
+            transactions = self.process_account_section(account_text, year)
+            
+            # After processing this section, add it to all_transactions
+            if transactions:
+                all_transactions.append(convert_to_canonical_format(transactions))
+
+        return all_transactions
+
+    def process_account_section(self, account_text: str, year: int) -> List[Dict[str, str]]:
+        lines = [line.strip() for line in account_text.split('\n') if line.strip()]
         
-        # Split into lines and clean them
-        lines = [line.strip() for line in movimientos_text.split('\n') if line.strip()]
-        
-        # Initialize variables
+        # Initialize variables for this section
         transactions = []
         current_transaction = {}
         buffer_concept = []
-        i = 0
-        total_lines = len(lines)
-        
-        # Regex to detect date lines (dd/mm or dd/mm/yyyy)
-        date_regex = re.compile(r'^(\d{2}/\d{2})(/\d{4})?$')
+        i = 0  # Initialize counter
+        total_lines = len(lines)  # Get total number of lines
         
         # Handle "SALDO ANTERIOR"
         while i < total_lines:
@@ -79,7 +104,8 @@ class BBVAParser:
         # Parse all transactions
         while i < total_lines:
             line = lines[i]
-            date_match = date_regex.match(line)
+            # Now we can use self.date_regex
+            date_match = self.date_regex.match(line)
             if date_match:
                 # If there's an existing transaction being built, save it
                 if current_transaction:
@@ -158,10 +184,10 @@ class BBVAParser:
                 cleaned_transactions.append(tx)
         
         # Add "SALDO AL ..." as the last transaction
-        saldo_al_match = re.search(r'SALDO AL .* DE .*', raw_text, re.IGNORECASE)
+        saldo_al_match = re.search(r'SALDO AL .* DE .*', account_text, re.IGNORECASE)
         if saldo_al_match:
             saldo_al_index = saldo_al_match.end()
-            saldo_al_lines = [line.strip() for line in raw_text[saldo_al_index:].split('\n') if line.strip()]
+            saldo_al_lines = [line.strip() for line in account_text[saldo_al_index:].split('\n') if line.strip()]
             if saldo_al_lines:
                 cleaned_transactions.append({
                     "FECHA": "",
@@ -172,4 +198,4 @@ class BBVAParser:
                     "SALDO": saldo_al_lines[0]
                 })
 
-        return convert_to_canonical_format(cleaned_transactions)
+        return cleaned_transactions

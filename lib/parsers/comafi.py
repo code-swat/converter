@@ -1,124 +1,266 @@
-import streamlit as st
-from typing import List, Dict
 import re
+from typing import List, Dict
+import streamlit as st
 
 class ComafiParser:
     def parse(self, data: List[str]) -> List[Dict[str, str]]:
         transactions = []
-        currency_regex = re.compile(r'(\d{1,3}(?:\.\d{3})*,\d{2})')  # Matches numbers like 1.234,56
+        stop_processing = False
+        saldo_carry = None
 
-        for page_number, page in enumerate(data, start=1):
-            lines = page.split('\n')
+        # Regular expressions
+        detalle_movimientos_regex = re.compile(r'DETALLE DE MOVIMIENTOS', re.IGNORECASE)
+        date_regex = re.compile(r'^\d{2}/\d{2}/\d{2}')
+        # Updated regex to capture both date and saldo, allowing variable spaces
+        saldo_al_regex = re.compile(r'Saldo al:\s*(\d{2}/\d{2}/\d{4})\s+([\d\.,]+)', re.IGNORECASE)
+        transporte_regex = re.compile(r'Transporte\s+[\d\.,]+', re.IGNORECASE)
+        header_regex = re.compile(
+            r'\bFecha\b.*\bConceptos\b.*\bReferencias\b.*\bDébitos\b.*\bCréditos\b.*\bSaldo\b',
+            re.IGNORECASE
+        )
+        currency_regex = re.compile(r'[\d\.,]+')
+
+        # Helper function to convert currency string to float
+        def to_float(s):
             try:
-                # Locate the "DETALLE DE MOVIMIENTOS" section
-                detalle_idx = next(i for i, line in enumerate(lines) if "DETALLE DE MOVIMIENTOS" in line)
-            except StopIteration:
-                st.warning(f"Page {page_number}: 'DETALLE DE MOVIMIENTOS' section not found.")
-                continue  # Skip this page if the section is not found
+                return float(s.replace('.', '').replace(',', '.'))
+            except ValueError:
+                st.error(f"Unable to convert currency string to float: {s}")
+                return 0.0
 
-            # Find the header line after "DETALLE DE MOVIMIENTOS"
-            header_line = None
-            header_idx = detalle_idx
-            for i in range(detalle_idx, len(lines)):
-                if all(col in lines[i] for col in ["Fecha", "Conceptos", "Referencias", "Débitos", "Créditos", "Saldo"]):
-                    header_line = lines[i]
-                    header_idx = i
-                    break
+        for page_index, page in enumerate(data):
+            st.info(f"Processing page {page_index + 1}")
+            lines = page.split('\n')
+            i = 0
 
-            if not header_line:
-                st.warning(f"Page {page_number}: Header line not found after 'DETALLE DE MOVIMIENTOS'.")
-                continue  # Skip if header is not found
+            while i < len(lines) and not stop_processing:
+                line = lines[i]
 
-            # Determine the start index of each column based on the header line
-            col_positions = {}
-            columns = ["Fecha", "Conceptos", "Referencias", "Débitos", "Créditos", "Saldo"]
-            for col in columns:
-                start = header_line.find(col)
-                if start != -1:
-                    col_positions[col] = start
+                # Detect "DETALLE DE MOVIMIENTOS"
+                if detalle_movimientos_regex.search(line):
+                    st.info(f"Processing DETALLE DE MOVIMIENTOS at page {page_index + 1}, line {i + 1}")
+                    i += 1  # Move to the next line after DETALLE DE MOVIMIENTOS
 
-            # Ensure all columns were found
-            if len(col_positions) != len(columns):
-                st.warning(f"Page {page_number}: Not all columns found in the header.")
-                continue  # Skip if any column is missing
+                    # Find header line
+                    while i < len(lines):
+                        header_line = lines[i]
+                        if header_regex.search(header_line):
+                            # Extract header positions
+                            headers = ["Fecha", "Conceptos", "Referencias", "Débitos", "Créditos", "Saldo"]
+                            headers_positions = {}
+                            for header in headers:
+                                match = re.search(r'\b' + re.escape(header) + r'\b', header_line)
+                                if match:
+                                    headers_positions[header] = match.start()
+                                else:
+                                    st.error(f"Header '{header}' not found at page {page_index + 1}, line {i + 1}.")
+                                    headers_positions = {}
+                                    break
 
-            # Sort columns by their start position
-            sorted_cols = sorted(col_positions.items(), key=lambda x: x[1])
+                            if not headers_positions:
+                                st.warning(f"Skipping DETALLE DE MOVIMIENTOS due to missing headers at page {page_index + 1}, line {i + 1}.")
+                                i += 1
+                                break  # Skip to next DETALLE
 
-            # Determine the boundaries for each column
-            col_boundaries = {}
-            for i, (col, start) in enumerate(sorted_cols):
-                if i < len(sorted_cols) - 1:
-                    end = sorted_cols[i + 1][1]
-                else:
-                    end = None  # Last column goes till the end
-                col_boundaries[col] = (start, end)
+                            # Sort headers by their positions
+                            sorted_headers = sorted(headers_positions.items(), key=lambda x: x[1])
+                            field_boundaries = {}
+                            for idx, (header, start_pos) in enumerate(sorted_headers):
+                                if header == "Referencias":
+                                    end_pos = start_pos + 35
+                                elif header == "Créditos":
+                                    end_pos = start_pos + len("Créditos") + 1
+                                elif header == "Saldo":
+                                    end_pos = field_boundaries["Créditos"][1] + 1
+                                else:
+                                    end_pos = sorted_headers[idx + 1][1] if idx + 1 < len(sorted_headers) else None
 
-            # Process each line after the header until "Saldo al" is found
-            for line in lines[header_idx + 1:]:
-                if "Saldo al" in line:
-                    # Extract the Saldo value
-                    saldo_match = currency_regex.search(line)
-                    saldo = saldo_match.group(1) if saldo_match else ""
-                    
-                    # Extract the date from "Saldo al: dd/mm/yyyy"
-                    date_match = re.search(r"Saldo al:\s*(\d{1,2}/\d{1,2}/\d{2,4})", line)
-                    fecha = date_match.group(1) if date_match else ""
-                    
-                    transaction = {
-                        "Fecha": fecha,
-                        "Conceptos": "Saldo",
-                        "Referencias": "",
-                        "Débitos": "",
-                        "Créditos": "",
-                        "Saldo": saldo
-                    }
-                    transactions.append(transaction)
-                    break  # End of transactions for this section
+                                field_boundaries[header] = (start_pos, end_pos)
 
-                if not line.strip():
-                    continue  # Skip empty lines
-
-                # Extract fields based on column boundaries
-                transaction = {}
-                for col in columns:
-                    start, end = col_boundaries[col]
-                    if end:
-                        field = line[start:end].strip()
+                            st.success(f"Headers detected with boundaries: {field_boundaries}")
+                            i += 1  # Move to the line after headers
+                            break
+                        elif transporte_regex.search(header_line):
+                            st.warning(f"Skipping Transporte section at page {page_index + 1}, line {i + 1}")
+                            # Skip Transporte section
+                            while i < len(lines) and not header_regex.search(lines[i]):
+                                i += 1
+                            break
+                        else:
+                            i += 1
                     else:
-                        field = line[start:].strip()
-                    transaction[col] = field
+                        st.error(f"Header line not found after DETALLE DE MOVIMIENTOS at page {page_index + 1}.")
+                        # Skip to next DETALLE
+                        break
 
-                # Handle the last three columns which are right-aligned numbers
-                # They might not align perfectly, so use regex to extract them
-                debito_match = currency_regex.search(transaction["Débitos"])
-                credito_match = currency_regex.search(transaction["Créditos"])
-                saldo_match = currency_regex.search(transaction["Saldo"])
+                    if not field_boundaries:
+                        continue  # Skip processing transactions for this DETALLE
 
-                transaction["Débitos"] = debito_match.group(1) if debito_match else ""
-                transaction["Créditos"] = credito_match.group(1) if credito_match else ""
-                transaction["Saldo"] = saldo_match.group(1) if saldo_match else ""
+                    # Process transactions until "Saldo al" is found
+                    while i < len(lines):
+                        current_line = lines[i].strip()
 
-                # Clean and standardize the data (e.g., convert numbers to float)
-                for key in ["Débitos", "Créditos", "Saldo"]:
-                    value = transaction[key]
-                    if value:
-                        # Replace dots with empty string and commas with dots for decimal
-                        value_clean = value.replace('.', '').replace(',', '.')
-                        try:
-                            transaction[key] = float(value_clean)
-                        except ValueError:
-                            transaction[key] = value_clean  # Keep as string if conversion fails
+                        # Stop if "Saldo al" is found
+                        saldo_al_match = saldo_al_regex.search(current_line)
+                        if saldo_al_match:
+                            fecha_saldo = saldo_al_match.group(1)
+                            final_saldo = saldo_al_match.group(2)
+                            transaction = {
+                                "Fecha": fecha_saldo,
+                                "Conceptos": "Saldo",
+                                "Referencias": "",
+                                "Débitos": "",
+                                "Créditos": "",
+                                "Saldo": final_saldo
+                            }
+                            transactions.append(transaction)
+                            st.info(f"Added final Saldo transaction: {transaction}")
+                            i += 1  # Move past the Saldo al line
+                            stop_processing = True
+                            break  # Exit current DETALLE DE MOVIMIENTOS section
 
-                # Append to transactions if at least Fecha or Saldo is present
-                if transaction["Fecha"] or transaction["Saldo"]:
-                    transactions.append(transaction)
+                        # Skip empty lines
+                        if not current_line:
+                            i += 1
+                            continue
 
-        # Optionally, display the transactions in Streamlit
-        st.write(f"Total transactions extracted: {len(transactions)}")
-        st.dataframe(transactions)
+                        # Skip Transporte lines within transactions
+                        if transporte_regex.search(current_line):
+                            st.warning(f"Skipping Transporte transaction at page {page_index + 1}, line {i + 1}")
+                            # Skip lines until next transaction or headers
+                            while i < len(lines) and not date_regex.match(lines[i]):
+                                i += 1
+                            continue
 
+                        # Detect transaction start with date
+                        date_match = date_regex.match(current_line)
+                        if date_match:
+                            try:
+                                fecha = date_match.group()
+                                transaction = {
+                                    "Fecha": fecha,
+                                    "Conceptos": "",
+                                    "Referencias": "",
+                                    "Débitos": "",
+                                    "Créditos": "",
+                                    "Saldo": ""
+                                }
+                                st.info(f"Processing transaction starting at line {i + 1}: {fecha}")
+
+                                # Extract fields based on field boundaries, ensure slicing is within line length
+                                def get_field(line, start, end):
+                                    if end and end <= len(line):
+                                        return line[start:end].strip()
+                                    elif start < len(line):
+                                        return line[start:].strip()
+                                    else:
+                                        return ""
+
+                                conceptos = get_field(current_line, field_boundaries["Conceptos"][0] - 3, field_boundaries["Conceptos"][1] - 2)
+                                referencias = get_field(current_line, field_boundaries["Referencias"][0] - 2, field_boundaries["Referencias"][1])
+                                debitos_field = get_field(current_line, field_boundaries["Referencias"][1] + 1, field_boundaries["Débitos"][1] + 1)
+                                creditos_field = get_field(current_line, field_boundaries["Créditos"][0], field_boundaries["Créditos"][1])
+                                saldo_field = get_field(current_line, field_boundaries["Saldo"][0], field_boundaries["Saldo"][1])
+
+                                # Log extracted fields
+                                st.info(f"Extracted fields - Conceptos: '{conceptos}', Referencias: '{referencias}', Débitos: '{debitos_field}', Créditos: '{creditos_field}', Saldo: '{saldo_field}'")
+
+                                # Handle multi-line "Conceptos" and "Referencias" if necessary
+                                while (not currency_regex.search(debitos_field) and
+                                       not currency_regex.search(creditos_field) and
+                                       not currency_regex.search(saldo_field)) and i < len(lines) -1:
+                                    i += 1
+                                    next_line = lines[i].strip()
+                                    conceptos += ' ' + get_field(next_line, field_boundaries["Conceptos"][0], field_boundaries["Conceptos"][1])
+                                    referencias += ' ' + get_field(next_line, field_boundaries["Referencias"][0], field_boundaries["Referencias"][1])
+                                    debitos_field = get_field(next_line, field_boundaries["Débitos"][0], field_boundaries["Débitos"][1])
+                                    creditos_field = get_field(next_line, field_boundaries["Créditos"][0], field_boundaries["Créditos"][1])
+                                    saldo_field = get_field(next_line, field_boundaries["Saldo"][0], field_boundaries["Saldo"][1])
+
+                                    # Log updated fields after multi-line
+                                    st.info(f"After multi-line - Conceptos: '{conceptos}', Referencias: '{referencias}', Débitos: '{debitos_field}', Créditos: '{creditos_field}', Saldo: '{saldo_field}'")
+
+                                transaction["Conceptos"] = conceptos
+                                transaction["Referencias"] = referencias
+
+                                # Handle "Saldo Anterior" special case
+                                if "saldo anterior" in conceptos.lower() or "saldo anterior" in referencias.lower():
+                                    transaction["Conceptos"] = "Saldo Anterior"
+                                    transaction["Referencias"] = ""
+                                    transaction["Débitos"] = ""
+                                    # Assign 'Saldo' from 'Créditos' field
+                                    saldo_match = currency_regex.search(creditos_field)
+                                    if saldo_match:
+                                        transaction["Saldo"] = saldo_match.group()
+                                    else:
+                                        transaction["Saldo"] = ""
+                                    transaction["Créditos"] = ""
+
+                                    if transaction["Saldo"]:
+                                        saldo_carry = to_float(transaction["Saldo"])
+                                else:
+                                    # Determine Débitos and Créditos
+                                    debitos_match = currency_regex.search(debitos_field)
+                                    creditos_match = currency_regex.search(creditos_field)
+
+                                    if debitos_match:
+                                        transaction["Débitos"] = debitos_match.group()
+                                    if creditos_match:
+                                        transaction["Créditos"] = creditos_match.group()
+
+                                    # Determine Saldo
+                                    saldo_match = currency_regex.search(saldo_field)
+                                    if saldo_match:
+                                        transaction["Saldo"] = saldo_match.group()
+
+                                    # Calculate and verify Saldo
+                                    if saldo_carry is not None and transaction["Saldo"]:
+                                        deb = to_float(transaction["Débitos"]) if transaction["Débitos"] else 0.0
+                                        cred = to_float(transaction["Créditos"]) if transaction["Créditos"] else 0.0
+                                        saldo_carry = saldo_carry - deb + cred
+                                        # Format saldo_carry back to string with comma as decimal separator
+                                        transaction["Saldo"] = f"{saldo_carry:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+
+                                # Log the transaction being added
+                                st.info(f"Transaction to add: {transaction}")
+
+                                transactions.append(transaction)
+                                st.success(f"Added transaction: {transaction}")
+                                i += 1  # Move to the next line after processing transaction
+                            except Exception as e:
+                                st.error(f"Error parsing transaction at page {page_index + 1}, line {i + 1}: {e}")
+                                i += 1  # Prevent infinite loop by moving to the next line
+                                continue
+                        else:
+                            i += 1  # Move to next line if current line doesn't start with a date
+                else:
+                    i += 1  # Move to next line if not in DETALLE DE MOVIMIENTOS
+
+        # Handle special cases for first and last transactions
+        if transactions:
+            # First transaction (Saldo Anterior)
+            first_transaction = transactions[0]
+            if "Saldo Anterior" in first_transaction["Conceptos"]:
+                first_transaction["Conceptos"] = "Saldo Anterior"
+                first_transaction["Referencias"] = ""
+                first_transaction["Débitos"] = ""
+                first_transaction["Créditos"] = ""
+
+            # Last transaction (Saldo al)
+            last_transaction = transactions[-1]
+            if last_transaction["Conceptos"] == "Saldo":
+                last_transaction["Referencias"] = ""
+                last_transaction["Débitos"] = ""
+                last_transaction["Créditos"] = ""
+
+        st.write(transactions)
         return transactions
+
+
+
+
+
+
 
 
 
