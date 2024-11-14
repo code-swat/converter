@@ -9,8 +9,6 @@ from io import BytesIO
 
 if st.session_state.logged_in:
     st.title("PDF Transformer")
-
-    previous_bank = None
     
     selected_bank = st.selectbox(
         "Select a bank",
@@ -21,15 +19,13 @@ if st.session_state.logged_in:
     uploaded_file = st.file_uploader("Upload your PDF", type=['pdf'])
 
     st.write(f"{selected_bank} status: {BankParser.get_parser_status(selected_bank)}")
-
-    if 'processed_data' not in st.session_state or previous_bank != selected_bank:
-        st.session_state.processed_data = None
-        previous_bank = selected_bank
     
     if uploaded_file is not None:
         st.write("File uploaded successfully!")
         
         if st.button("Process PDF"):
+            st.session_state.processed_data = None
+
             with st.spinner("Processing PDF..."):                
                 parser = BankParser.get_parser_api(selected_bank)
                 bytes_data = uploaded_file.read()
@@ -38,6 +34,7 @@ if st.session_state.logged_in:
                 if data:
                     parser = BankParser.get_parser(selected_bank)
                     parsed_data = parser.parse(data)
+                    #st.write(parsed_data)
                     
                     if parsed_data:
                         file_stats = stats(bytes_data)
@@ -53,7 +50,7 @@ if st.session_state.logged_in:
                     st.session_state.processed_data = None
 
     # Display download buttons if data has been processed
-    if st.session_state.processed_data:
+    if 'processed_data' in st.session_state and st.session_state.processed_data:
         file_name = uploaded_file.name.rsplit('.', 1)[0]
 
         for account_index, account_data in enumerate(st.session_state.processed_data, 1):
