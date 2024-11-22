@@ -16,9 +16,13 @@ def logout():
 login_page = st.Page('views/login.py', title="Log in", icon=":material/login:")
 logout_page = st.Page(logout, title="Log out", icon=":material/logout:")
 transformer_page = st.Page('views/transformer.py', title="Transformer", icon=":material/dashboard:")
+admin_page = st.Page('views/admin.py', title="Admin", icon=":material/overview:")
 
 if st.session_state.logged_in:
-    pg = st.navigation([transformer_page, logout_page])
+    if st.session_state.username == "admin":
+        pg = st.navigation([transformer_page, admin_page, logout_page])
+    else:
+        pg = st.navigation([transformer_page, logout_page])
 else:
     pg = st.navigation([login_page])
 

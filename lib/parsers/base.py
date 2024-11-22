@@ -1,9 +1,10 @@
-#rom lib.api.datalab import parse as datalab_parse
+#from lib.api.datalab import parse as datalab_parse
 #rom lib.api.datalab_ocr import parse as datalab_ocr_parse
 from lib.api.file import parse as file_parse
+#from lib.api.file_alt import parse as file_alt_parse
 #from lib.api.file_tables import parse as file_tables_parse
 #from lib.api.file_ocr import parse as file_ocr_parse
-#rom lib.api.llamaparse import parse as llama_parse
+#from lib.api.llamaparse import parse as llama_parse
 
 from lib.parsers.bbva import BBVAParser
 from lib.parsers.bpn import BPNParser
@@ -22,11 +23,11 @@ from lib.parsers.supervielle import SupervielleParser
 parser_map = {
     "BBVA": (BBVAParser, file_parse, "✅"),
     "BPN": (BPNParser, file_parse, "✅"),
-    "Comafi": (ComafiParser, file_parse, "❌"),
-    "Credicoop": (CredicoopParser, file_parse, "❌"),
+    "Comafi": (ComafiParser, file_parse, "✅"),
+    "Credicoop": (CredicoopParser, file_parse, "✅"),
     "Galicia": (GaliciaParser, file_parse, "✅"),
     "HSBC": (HSBCParser, file_parse, "✅"),
-    "ICBC": (ICBCParser, file_parse, "❌"),
+    "ICBC": (ICBCParser, file_parse, "✅"),
     "Macro": (MacroParser, file_parse, "❌"),
     "Nación": (NacionParser, file_parse, "✅"),
     "Patagonia": (PatagoniaParser, file_parse, "❌"),
