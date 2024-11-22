@@ -7,11 +7,11 @@ def convert_to_canonical_format(data: Dict) -> Dict:
     for row in data:
         canonical_row = {
             "FECHA": row["FECHA"],
-            "DETALLE": row["DESCRIPCION"].split('\n')[0] if row["DESCRIPCION"] else "",
-            "REFERENCIA": '\n'.join(row["DESCRIPCION"].split('\n')[1:]) if row["DESCRIPCION"] else "",
-            "DEBITOS": row["DEBITO"], 
-            "CREDITOS": row["CREDITO"],
-            "SALDO": row["SALDO"]
+            "DETALLE": row["DESCRIPCION"],
+            "REFERENCIA": row["COMBTE"],
+            "DEBITOS": float(row["DEBITO"].replace('.', '').replace(',', '.')) if row["DEBITO"] else "", 
+            "CREDITOS": float(row["CREDITO"].replace('.', '').replace(',', '.')) if row["CREDITO"] else "",
+            "SALDO": float(row["SALDO"].replace('.', '').replace(',', '.')) if row["SALDO"] else ""
         }
 
         canonical_rows.append(canonical_row)
@@ -19,158 +19,167 @@ def convert_to_canonical_format(data: Dict) -> Dict:
     return canonical_rows
 
 class CredicoopParser:
-    def parse(self, data: List[str]) -> Dict:
+    # Configurable field positions (start and end indices)
+    FIELD_CONFIG = {
+        "FECHA": (0, 9),       # Adjusted to capture 'dd/mm/aa'
+        "COMBTE": (9, 16),
+        "DESCRIPCION": (16, 57),
+        "DEBITO": (57, 74),
+        "CREDITO": (74, 92),
+        "SALDO": (92, 109),     # Till end of line
+    }
+
+    DATE_REGEX = re.compile(r'^\d{2}/\d{2}/\d{2}$')
+
+    def parse(self, data: List[str]) -> List[List[Dict[str, str]]]:
         # Combine all pages into a single list of lines
         lines = []
         for page in data:
             lines.extend(page.split('\n'))
 
-        rows = []
-        current_row = None
-        parsing_transactions = False
+        entries = []
+        saldo_anterior = None
+        balance = None
+        processing = False
+        skip_until_headers = False
+        i = 0
 
-        # Regular expressions
-        date_regex = re.compile(r'^\s*(\d{2}/\d{2}/\d{2})\s+')
-        amount_regex = re.compile(
-            r'([-−]?[\d\.,]+)'                # First amount (DEBITO or CREDITO)
-            r'(?:\s+([-−]?[\d\.,]+))?'        # Optional second amount (CREDITO or SALDO)
-            r'(?:\s+([-−]?[\d\.,]+))?'        # Optional third amount (SALDO)
-            r'\s*$'
-        )
+        # Regular expression to match the header line
+        header_regex = re.compile(r'^FECHA\s+COMBTE\s+DESCRIPCION\s+DEBITO\s+CREDITO\s+SALDO')
 
-        # Keywords that indicate non-transactional lines
-        footer_keywords = [
-            'CONTINUA EN PAGINA SIGUIENTE',
-            'VIENE DE PAGINA ANTERIOR',
-            'Banco Credicoop Cooperativo',
-            'Ctro. de Contacto Telefonico',
-            'Calidad de Servicios',
-            'Sitio de Internet',
-            'Cuenta Corriente',
-            'FECHA   COMBTE',
-            'DENOMINACION',
-            'TOTAL IMPUESTO',
-            'LIQUIDACION',
-            'DEBITOS AUTOMATICOS',
-            'REINT X USO DE TARJ.CAB DEBITO',
-            'REINTEGRO POR USO CABAL DEBITO',
-            'REPARTO POR USO CABAL',
-            'REINTEGRO POR USO DE TARJ.CAB DEBITO',
-            'DEPOSITO',
-            'SUELDO',
-            'ESPECIAL',
-            'PERIODICO',
-            'SUCUR'
-        ]
+        # Function to format amounts
+        def format_amount(value):
+            if value is None:
+                return ""
+            # Ensure consistent decimal separator
+            amount_str = "{:,.2f}".format(abs(value)).replace(',', 'X').replace('.', ',').replace('X', '.')
+            return f"-{amount_str}" if value < 0 else amount_str
 
-        def is_footer_line(line):
-            return any(keyword in line for keyword in footer_keywords)
+        # Function to parse currency strings to float
+        def parse_currency(value):
+            try:
+                return float(value.replace('.', '').replace(',', '.'))
+            except:
+                return None
 
-        # Start parsing after the transaction table header
-        for line in lines:
-            # Detect the start of the transaction table
-            if not parsing_transactions:
-                if 'FECHA' in line and 'DESCRIPCION' in line and 'DEBITO' in line and 'CREDITO' in line:
-                    parsing_transactions = True
-                continue  # Skip until we find the header
+        while i < len(lines):
+            line = lines[i].strip()
 
-            # Stop parsing if we reach end of transactions
-            if any(term in line for term in ['SALDO AL', 'DENOMINACION', 'TOTAL IMPUESTO', 'LIQUIDACION']):
-                if current_row:
-                    # Remove the helper key before appending
-                    del current_row['continuation_lines_remaining']
-                    rows.append(current_row)
-                    current_row = None
-                break
-
-            line = line.rstrip()
-
-            # Skip empty lines or lines with only underscores or dashes
-            if not line.strip() or re.match(r'^[_\-]+$', line.strip()):
-                continue
-
-            # Check if line starts with a date
-            date_match = date_regex.match(line)
-            if date_match:
-                # If we have a current_row, save it
-                if current_row:
-                    del current_row['continuation_lines_remaining']
-                    rows.append(current_row)
-
-                # Start a new transaction
-                current_row = {
-                    'FECHA': date_match.group(1),
-                    'COMBTE': '',
-                    'DESCRIPCION': '',
-                    'DEBITO': '',
-                    'CREDITO': '',
-                    'SALDO': ''
-                }
-
-                rest_of_line = line[date_match.end():]
-
-                # Try to extract COMBTE: first word if numeric
-                combte_match = re.match(r'^(\d+)\s+', rest_of_line)
-                if combte_match:
-                    current_row['COMBTE'] = combte_match.group(1)
-                    rest_of_line = rest_of_line[combte_match.end():]
-                else:
-                    current_row['COMBTE'] = ''
-
-                # Extract amounts at the end of the line
-                amount_match = amount_regex.search(rest_of_line)
-                if amount_match:
-                    amounts = [amt for amt in amount_match.groups() if amt]
-                    description = rest_of_line[:amount_match.start()].strip()
-                else:
-                    amounts = []
-                    description = rest_of_line.strip()
-
-                current_row['DESCRIPCION'] = description
-
-                # Assign amounts based on COMBTE presence
-                if len(amounts) == 1:
-                    if current_row['COMBTE']:
-                        current_row['DEBITO'] = amounts[0]
-                    else:
-                        current_row['CREDITO'] = amounts[0]
-                elif len(amounts) == 2:
-                    if current_row['COMBTE']:
-                        current_row['DEBITO'] = amounts[0]
-                        current_row['SALDO'] = amounts[1]
-                    else:
-                        current_row['CREDITO'] = amounts[0]
-                        current_row['SALDO'] = amounts[1]
-                elif len(amounts) == 3:
-                    current_row['DEBITO'] = amounts[0]
-                    current_row['CREDITO'] = amounts[1]
-                    current_row['SALDO'] = amounts[2]
-
-                # Initialize continuation lines remaining
-                current_row['continuation_lines_remaining'] = 1  # Limit to 1 continuation line
-                continue
-
+            if not processing:
+                if "SALDO ANTERIOR" in line:
+                    processing = True
+                    # Extract the SALDO ANTERIOR value
+                    parts = line.split()
+                    saldo_value_str = parts[-1]
+                    saldo_anterior = parse_currency(saldo_value_str)
+                    if saldo_anterior is None:
+                        raise ValueError(f"Invalid SALDO ANTERIOR value: {saldo_value_str}")
+                    balance = saldo_anterior
+                    entries.append({
+                        "FECHA": "",
+                        "COMBTE": "",
+                        "DESCRIPCION": "SALDO ANTERIOR",
+                        "DEBITO": "",
+                        "CREDITO": "",
+                        "SALDO": format_amount(balance)
+                    })
             else:
-                # Check if it's a continuation line (indented)
-                continuation_match = re.match(r'^\s+(.*)', line)
-                if continuation_match and current_row:
-                    # Avoid appending lines that are likely footers or unrelated
-                    continuation_text = continuation_match.group(1).strip()
-                    if is_footer_line(continuation_text):
-                        continue  # Skip footer lines
-                    if current_row.get('continuation_lines_remaining', 0) > 0:
-                        # Append to description with newline
-                        current_row['DESCRIPCION'] += '\n' + continuation_text
-                        # Decrement continuation lines remaining
-                        current_row['continuation_lines_remaining'] -= 1
-                    continue  # Skip further processing for continuation lines
+                if "CONTINUA EN PAGINA SIGUIENTE" in line:
+                    skip_until_headers = True
+                elif skip_until_headers:
+                    if header_regex.match(line):
+                        skip_until_headers = False
+                    # Else, continue skipping
+                elif not line:
+                    # Ignore blank lines
+                    pass
+                elif "SALDO AL" in line:
+                    # Extract the date and balance for SALDO FINAL
+                    # Example: "SALDO AL 31/05/24 9.910.825,60"
+                    saldo_final_match = re.search(r'SALDO AL\s+(\d{2}/\d{2}/\d{2})\s+([\d\.,\-]+)', line)
+                    if saldo_final_match:
+                        date = saldo_final_match.group(1)
+                        saldo_final_str = saldo_final_match.group(2)
+                        saldo_final = parse_currency(saldo_final_str)
+                        if saldo_final is None:
+                            raise ValueError(f"Invalid SALDO FINAL value: {saldo_final_str}")
+                        entries.append({
+                            "FECHA": date,
+                            "COMBTE": "",
+                            "DESCRIPCION": "SALDO FINAL",
+                            "DEBITO": "",
+                            "CREDITO": "",
+                            "SALDO": format_amount(saldo_final)
+                        })
+                    else:
+                        raise ValueError(f"Invalid SALDO FINAL line format: {line}")
+                    break  # Assuming SALDO FINAL is the end
+                else:
+                    # Check if line starts with a valid date
+                    fecha_str = line[self.FIELD_CONFIG["FECHA"][0]:self.FIELD_CONFIG["FECHA"][1]].strip()
+                    if self.DATE_REGEX.match(fecha_str):
+                        # Start of a new entry
+                        combte_str = line[self.FIELD_CONFIG["COMBTE"][0]:self.FIELD_CONFIG["COMBTE"][1]].strip()
+                        descripcion_str = line[self.FIELD_CONFIG["DESCRIPCION"][0]:self.FIELD_CONFIG["DESCRIPCION"][1]].strip()
+                        debito_str = line[self.FIELD_CONFIG["DEBITO"][0]:self.FIELD_CONFIG["DEBITO"][1]].strip()
+                        credito_str = line[self.FIELD_CONFIG["CREDITO"][0]:self.FIELD_CONFIG["CREDITO"][1]].strip()
+                        saldo_str = line[self.FIELD_CONFIG["SALDO"][0]:].strip()
 
-                # If the line doesn't start with a date and isn't indented, it's non-transactional; skip
-                continue
+                        current_entry = {
+                            "FECHA": fecha_str,
+                            "COMBTE": combte_str,
+                            "DESCRIPCION": descripcion_str,
+                            "DEBITO": "",
+                            "CREDITO": "",
+                            "SALDO": ""
+                        }
 
-        # Add the last transaction if exists
-        if current_row:
-            del current_row['continuation_lines_remaining']
-            rows.append(current_row)
+                        # Check for continuation lines
+                        j = i + 1
+                        while j < len(lines):
+                            next_line = lines[j]
+                            next_fecha = next_line[self.FIELD_CONFIG["FECHA"][0]:self.FIELD_CONFIG["FECHA"][1]].strip()
+                            if not self.DATE_REGEX.match(next_fecha) and next_line.strip() and "SALDO AL" not in next_line.strip():
+                                # Continuation line
+                                continuation_descr = next_line[self.FIELD_CONFIG["DESCRIPCION"][0]:self.FIELD_CONFIG["DESCRIPCION"][1]].strip()
+                                if continuation_descr:
+                                    current_entry["DESCRIPCION"] += "\n" + continuation_descr
+                                j += 1
+                                i = j - 1  # Update main loop index
+                            else:
+                                break
 
-        return convert_to_canonical_format(rows)
+                        # Parse amounts
+                        debito = parse_currency(debito_str) if debito_str else None
+                        credito = parse_currency(credito_str) if credito_str else None
+                        saldo = parse_currency(saldo_str) if saldo_str else None
+
+                        # Update balance
+                        if debito is not None:
+                            balance -= debito
+                        if credito is not None:
+                            balance += credito
+
+                        # Check balance if saldo is provided
+                        if saldo is not None:
+                            if abs(balance - saldo) > 0.01:
+                                raise ValueError(f"Balance mismatch at line {i+1}: calculated {balance}, reported {saldo}")
+                                #st.write(f"Balance mismatch at line {i+1}: calculated {balance}, reported {saldo}")
+                        else:
+                            saldo = balance
+
+                        # Assign formatted amounts
+                        current_entry["DEBITO"] = format_amount(debito) if debito is not None else ""
+                        current_entry["CREDITO"] = format_amount(credito) if credito is not None else ""
+                        current_entry["SALDO"] = format_amount(saldo) if saldo is not None else ""
+
+                        entries.append(current_entry)
+                    else:
+                        #st.write(f"Ignoring line {i+1}: fecha_str {fecha_str} - {lines[i]}")
+                        # Line does not start with a valid date and is not a continuation
+                        # Ignore or handle as needed
+                        pass
+
+            i += 1
+
+        return [convert_to_canonical_format(entries)]

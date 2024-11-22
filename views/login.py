@@ -1,8 +1,9 @@
 import hashlib
 import streamlit as st
-from sqlalchemy import text
 import requests
 import base64
+
+from sqlalchemy import text
 
 def verify_password_local(username, password):
     conn = st.connection('sqlite')
@@ -40,14 +41,9 @@ if st.session_state.logged_in == False:
     with st.form(key='login_form'):
         username = st.text_input('Username')
         password = st.text_input('Password', type='password')
-        auth_method = st.radio(
-            "Authentication Method",
-            ["SIGE", "Local"],
-            horizontal=True
-        )
         
         if st.form_submit_button('Login'):
-            if auth_method == "Local":
+            if username.lower() == "admin":
                 is_valid = verify_password_local(username, password)
             else:
                 is_valid = verify_password_api(username, password)
