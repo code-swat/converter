@@ -132,13 +132,18 @@ class ICBCParser:
                     f_valor = ''
                     concepto = rest_of_line.strip()
 
-                # Initialize fields
-                comprobante = ''
+                # Split concepto if it contains multiple spaces
+                concepto_parts = [part for part in concepto.split('  ') if part.strip()]
+                if len(concepto_parts) > 1:
+                    concepto = concepto_parts[0].strip()
+                    comprobante = '\n'.join(concepto_parts[1:]).strip()
+                else:
+                    concepto = concepto.strip()
+                    comprobante = ''
+
+                # Initialize remaining fields
                 origen = ''
                 canal = ''
-
-                # Now, we can attempt to parse COMPROBANTE, ORIGEN, CANAL if present
-                # For simplicity, let's assume they are not present or set them if needed
 
                 # Parse amounts
                 amounts = []
