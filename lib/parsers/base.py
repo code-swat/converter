@@ -19,6 +19,7 @@ from lib.parsers.patagonia import PatagoniaParser
 from lib.parsers.roela import RoelaParser
 from lib.parsers.santander import SantanderParser
 from lib.parsers.supervielle import SupervielleParser
+from lib.parsers.mercadopago import MercadoPagoParser
 
 parser_map = {
     "BBVA": (BBVAParser, file_parse, "✅"),
@@ -29,6 +30,7 @@ parser_map = {
     "HSBC": (HSBCParser, file_parse, "✅"),
     "ICBC": (ICBCParser, file_parse, "✅"),
     "Macro": (MacroParser, file_parse, "❌"),
+    "Mercado Pago": (MercadoPagoParser, file_parse, "✅"),
     "Nación": (NacionParser, file_parse, "✅"),
     "Patagonia": (PatagoniaParser, file_parse, "❌"),
     "Roela": (RoelaParser, file_parse, "✅"),
