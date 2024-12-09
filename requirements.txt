@@ -1,5 +1,6 @@
 streamlit
 SQLAlchemy
+psycopg2-binary
 python-dotenv
 PyPDF2
 openpyxl
