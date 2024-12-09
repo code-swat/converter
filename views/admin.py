@@ -25,7 +25,7 @@ if st.session_state.logged_in and st.session_state.username == "admin":
     )
 
     # Get all users
-    conn = st.connection('sqlite')
+    conn = st.connection('postgres')
     with conn.session as session:
         users = session.execute(text("SELECT username FROM users WHERE username != 'admin'")).fetchall()
         usernames = [user[0] for user in users]
@@ -45,15 +45,15 @@ if st.session_state.logged_in and st.session_state.username == "admin":
     
     with conn.session as session:
         query = """
-            SELECT u.user, u.timestamp, u.stats
+            SELECT u.user_name, u.timestamp, u.stats
             FROM usages u
             WHERE u.timestamp BETWEEN :start_date AND :end_date
         """
         
         if selected_user != "All Users":
-            query += " AND u.user = :username"
+            query += " AND u.user_name = :username"
         if exclude_admin:
-            query += " AND u.user != 'admin'"
+            query += " AND u.user_name != 'admin'"
             
         params = {
             'start_date': start_date,

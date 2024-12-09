@@ -6,11 +6,11 @@ import base64
 from sqlalchemy import text
 
 def verify_password_local(username, password):
-    conn = st.connection('sqlite')
+    conn = st.connection('postgres')
     with conn.session as session:
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
         result = session.execute(
-            text('SELECT * FROM users WHERE username=:username AND password=:password'), 
+            text('SELECT * FROM users WHERE username = :username AND password = :password'), 
             {'username': username, 'password': hashed_password}
         ).fetchone()
         return result is not None
