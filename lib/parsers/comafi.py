@@ -5,13 +5,16 @@ def convert_to_canonical_format(data: Dict) -> Dict:
     canonical_rows = []
 
     for row in data:
+        saldo = row["Saldo"].replace('-', '') if row["Saldo"].endswith('-') else row["Saldo"]
+        saldo = f'-{saldo}' if row["Saldo"].endswith('-') else saldo
+
         canonical_row = {
             "FECHA": row["Fecha"],
             "DETALLE": row["Conceptos"],
             "REFERENCIA": row["Referencias"],
             "DEBITOS": float(row["Débitos"].replace('.', '').replace(',', '.')) if row["Débitos"] else "", 
             "CREDITOS": float(row["Créditos"].replace('.', '').replace(',', '.')) if row["Créditos"] else "",
-            "SALDO": float(row["Saldo"].replace('.', '').replace(',', '.')) if row["Saldo"] else ""
+            "SALDO": float(saldo.replace('.', '').replace(',', '.')) if saldo else ""
         }
 
         canonical_rows.append(canonical_row)

@@ -1,6 +1,5 @@
 import streamlit as st
 import json
-
 from typing import Dict, Optional
 from sqlalchemy import text
 
@@ -11,15 +10,15 @@ class UsageTracker:
 
     def _create_table_if_not_exists(self):
         """Create the usages table if it doesn't exist"""
-        conn = st.connection('sqlite')
+        conn = st.connection('postgres')
 
         try:
             with conn.session as session:
                 session.execute(text("""
                     CREATE TABLE IF NOT EXISTS usages (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user TEXT,
-                        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        id SERIAL PRIMARY KEY,
+                        user_name TEXT,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         stats TEXT
                     )
                 """))
@@ -30,20 +29,15 @@ class UsageTracker:
     def record_conversion(self, stats: Dict) -> None:
         """
         Record a conversion event for the current user in the database
-        
-        Args:
-            stats (Dict): Statistics from the file parser containing info like
-                         number of tokens, characters, etc.
         """
         username = st.session_state.get('username', 'anonymous')
-        conn = st.connection('sqlite')
+        conn = st.connection('postgres')
         
         try:
             with conn.session as session:
-                # Insert usage record without NULL
                 session.execute(
                     text("""
-                    INSERT INTO usages (user, stats, timestamp)
+                    INSERT INTO usages (user_name, stats, timestamp)
                     VALUES (:user, :stats, CURRENT_TIMESTAMP)
                     """),
                     {'user': username, 'stats': json.dumps(stats)}
@@ -55,23 +49,16 @@ class UsageTracker:
     def get_user_stats(self, username: Optional[str] = None) -> Dict:
         """
         Get usage statistics for a specific user or current user from database
-        
-        Args:
-            username (Optional[str]): Username to get stats for. If None, uses current user
-            
-        Returns:
-            Dict: Summary of user's usage statistics
         """
         username = username or st.session_state.get('username', 'anonymous')
-        conn = st.connection('sqlite')
+        conn = st.connection('postgres')
 
         with conn.session as session:
-            # Get user's usage records
             result = session.execute(text("""
-                SELECT u.timestamp, u.stats
-                FROM usages u
-                WHERE u.user = :username
-                ORDER BY u.timestamp DESC
+                SELECT timestamp, stats
+                FROM usages
+                WHERE user_name = :username
+                ORDER BY timestamp DESC
             """),
             {'username': username}
             )
@@ -89,7 +76,7 @@ class UsageTracker:
             
             conversion_history = [{
                 'timestamp': record[0],
-                'stats': json.loads(record[1])  # Ensure JSON is parsed
+                'stats': json.loads(record[1])
             } for record in records]
             
             total_conversions = len(records)
