@@ -39,10 +39,10 @@ if st.session_state.logged_in == False:
     st.title('Login')
 
     with st.form(key='login_form'):
-        username = st.text_input('Username')
-        password = st.text_input('Password', type='password')
+        username = st.text_input('Username', disabled=True)
+        password = st.text_input('Password', type='password', disabled=True)
         
-        if st.form_submit_button('Login'):
+        if st.form_submit_button('Login', disabled=True):
             if username.lower() == "admin":
                 is_valid = verify_password_local(username, password)
             else:
