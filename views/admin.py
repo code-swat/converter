@@ -42,26 +42,26 @@ if st.session_state.logged_in and st.session_state.username == "admin":
 
     # Get usage data
     start_date, end_date = get_month_range(selected_month)
-    
+
     with conn.session as session:
         query = """
             SELECT u.user_name, u.timestamp, u.stats
             FROM usages u
             WHERE u.timestamp BETWEEN :start_date AND :end_date
         """
-        
+
         if selected_user != "All Users":
             query += " AND u.user_name = :username"
         if exclude_admin:
             query += " AND u.user_name != 'admin'"
-            
+
         params = {
             'start_date': start_date,
             'end_date': end_date
         }
         if selected_user != "All Users":
             params['username'] = selected_user
-            
+
         results = session.execute(text(query), params).fetchall()
 
     if results:
@@ -77,7 +77,7 @@ if st.session_state.logged_in and st.session_state.username == "admin":
 
         # Display metrics
         col1, col2, col3 = st.columns(3)
-        
+
         with col1:
             st.metric("Total Users", len(df['User'].unique()))
         with col2:
@@ -101,4 +101,4 @@ if st.session_state.logged_in and st.session_state.username == "admin":
     else:
         st.info("No usage data found for the selected period")
 else:
-    st.error("Access denied. Admin privileges required.") 
+    st.error("Access denied. Admin privileges required.")

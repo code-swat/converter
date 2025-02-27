@@ -25,4 +25,3 @@ def stats(data: bytes) -> Dict:
         stats = { "pages": len(doc) }
 
     return stats
-            

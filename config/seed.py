@@ -6,7 +6,7 @@ def seed_db():
     conn = st.connection('postgres')
     default_password = "admin#123"
     hashed_default = hashlib.sha256(default_password.encode()).hexdigest()
-    
+
     with conn.session as session:
         # Check if admin user exists
         result = session.execute(text("SELECT * FROM users WHERE username = 'admin'")).fetchone()
@@ -23,4 +23,4 @@ def seed_db():
                 text("UPDATE users SET password = :password WHERE username = 'admin'"),
                 {"password": hashed_default}
             )
-            session.commit() 
+            session.commit()

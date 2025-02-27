@@ -1,5 +1,6 @@
 .venv
 .streamlit
 database.db
+data/
 *.pyc
 *.xlsx
