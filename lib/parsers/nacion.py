@@ -2,142 +2,147 @@ import streamlit as st
 from typing import Dict, List
 import re
 
-def convert_to_canonical_format(data: Dict) -> Dict:
+def convert_to_canonical_format(data: List[Dict[str, str]]) -> List[Dict[str, str]]:
     canonical_rows = []
-
     for row in data:
+        # Process SALDO: check for trailing '-' and format accordingly.
+        saldo_str = row["SALDO"]
+        is_negative = saldo_str.endswith('-')
+        if is_negative:
+            saldo_str = saldo_str[:-1]  # Remove trailing '-'
+        # Replace dots by nothing in the integer part and keep the comma in the fractional part.
+        # First, convert to a uniform format with comma as decimal separator.
+        saldo_temp = saldo_str.replace('.', ',')
+        parts = saldo_temp.rsplit(',', 1)
+        if len(parts) == 2:
+            formatted_saldo = parts[0].replace(',', '') + ',' + parts[1]
+        else:
+            formatted_saldo = saldo_temp
+        if is_negative:
+            formatted_saldo = '-' + formatted_saldo
+
         canonical_row = {
             "FECHA": row["FECHA"],
             "DETALLE": row["MOVIMIENTOS"],
             "REFERENCIA": row["COMPROB."],
             "DEBITOS": row["DEBITOS"].replace('.', ''),
             "CREDITOS": row["CREDITOS"].replace('.', ''),
-            "SALDO": row["SALDO"].replace('.', ',').rsplit(',', 1)[0].replace(',', '') + ',' + row["SALDO"].replace('.', ',').rsplit(',', 1)[1]
+            "SALDO": formatted_saldo
         }
-
         canonical_rows.append(canonical_row)
-
     return canonical_rows
 
 class NacionParser:
     def parse(self, data: List[str]) -> List[List[Dict[str, str]]]:
-        # Combine all lines into a single string if data is a list of strings
         text = "\n".join(data)
-        
-        # Split the text into lines
         lines = text.split("\n")
-        
-        # Initialize variables
+
         records = []
-        parsing = False
         previous_saldo = None
-        
-        # Regular expressions
-        date_regex = re.compile(r'^\d{2}/\d{2}/\d{2}')
-        currency_regex = re.compile(r'\d{1,3}(?:\.\d{3})*,\d{2}-?')
-        comprob_regex = re.compile(r'^\d+$')
-        
-        for line in lines:
-            line = line.strip()
-            
-            # Start parsing when "SALDO ANTERIOR" is found
-            if "SALDO ANTERIOR" in line:
-                parsing = True
-                # Extract the saldo anterior
-                saldo_match = re.search(currency_regex, line)
-                saldo = saldo_match.group() if saldo_match else "0,00"
+        i = 0
+
+        # Find the "SALDO ANTERIOR" header and its following line (the initial balance)
+        while i < len(lines):
+            line = lines[i].strip()
+            if line.upper() == "SALDO ANTERIOR":
+                i += 1  # The next line should contain the amount.
+                saldo_line = lines[i].strip() if i < len(lines) else "0,00"
+                saldo_line = re.sub(r'A$', '', saldo_line)  # remove trailing A if present
                 records.append({
                     "FECHA": "",
                     "MOVIMIENTOS": "SALDO ANTERIOR",
                     "COMPROB.": "",
                     "DEBITOS": "",
                     "CREDITOS": "",
-                    "SALDO": saldo
+                    "SALDO": saldo_line
                 })
-                previous_saldo = self._convert_currency(saldo)
+                previous_saldo = self._convert_currency(saldo_line)
+                i += 1
+                break
+            i += 1
+
+        # Regex to detect a date at the beginning of a transaction line.
+        date_regex = re.compile(r'^\d{2}/\d{2}/\d{2}')
+
+        # Process transactions until "SALDO FINAL" is encountered.
+        while i < len(lines):
+            line = lines[i].strip()
+            if "SALDO FINAL" in line.upper():
+                break
+            # Only process lines that start with a date.
+            if not date_regex.match(line):
+                i += 1
                 continue
-            
-            # Stop parsing when "SALDO FINAL" is found
-            if "SALDO FINAL" in line:
-                parsing = False
+
+            # Line with date and initial part of MOVIMIENTOS.
+            parts = line.split()
+            fecha = parts[0]
+            movimientos = " ".join(parts[1:])
+            i += 1
+
+            # If the next line is not an integer, then it is a continuation of MOVIMIENTOS.
+            if i < len(lines) and not lines[i].strip().isdigit():
+                movimientos += " " + lines[i].strip()
+                i += 1
+
+            # Next line must be COMPROB. (always an integer).
+            if i >= len(lines):
+                break
+            comprob_line = lines[i].strip()
+            if not comprob_line.isdigit():
+                i += 1
                 continue
-            
-            if not parsing:
-                continue
-            
-            # Check if the line starts with a date
-            if date_regex.match(line):
-                # Split the line into parts
-                parts = line.split()
-                fecha = parts[0]
-                
-                # Initialize fields
-                movimientos = []
-                comprob = ""
-                debitos = ""
-                creditos = ""
-                saldo = ""
-                
-                # Find the comprob index
-                comprob_index = -1
-                for i in range(1, len(parts)):
-                    if comprob_regex.match(parts[i]):
-                        # Check if the next part is currency to confirm COMPROB.
-                        if i + 1 < len(parts) and currency_regex.match(parts[i + 1]):
-                            comprob = parts[i]
-                            movimientos = parts[1:i]
-                            comprob_index = i
-                            break
-                movimientos_str = " ".join(movimientos)
-                
-                if comprob_index == -1:
-                    # If no comprob found, assume entire line after date is movimientos
-                    movimientos_str = " ".join(parts[1:])
-                else:
-                    # After comprob, the next parts are DEBITOS/CREDITOS and SALDO
-                    remaining = parts[comprob_index + 1:]
-                    currency_matches = currency_regex.findall(" ".join(remaining))
-                    
-                    if len(currency_matches) >= 2:
-                        guessed_value_str = currency_matches[0]
-                        saldo_str = currency_matches[1]
-                        
-                        guessed_value = self._convert_currency(guessed_value_str)
-                        current_saldo = self._convert_currency(saldo_str)
-                        
-                        difference = current_saldo - previous_saldo
-                        
-                        if difference > 0:
-                            creditos = guessed_value_str
-                        elif difference < 0:
-                            debitos = guessed_value_str
-                        # If difference is zero, neither debit nor credit
-                        
-                        saldo = saldo_str
-                        previous_saldo = current_saldo
-                    elif len(currency_matches) == 1:
-                        # Only saldo present
-                        saldo = currency_matches[0]
-                        previous_saldo = self._convert_currency(saldo)
-                
-                record = {
-                    "FECHA": fecha,
-                    "MOVIMIENTOS": movimientos_str,
-                    "COMPROB.": comprob,
-                    "DEBITOS": debitos,
-                    "CREDITOS": creditos,
-                    "SALDO": saldo
-                }
-                records.append(record)
-        
+            comprob = comprob_line
+            i += 1
+
+            # Next line: transaction amount.
+            if i >= len(lines):
+                break
+            guessed_value_str = lines[i].strip()
+            # Remove trailing "A" if present.
+            guessed_value_str = re.sub(r'A$', '', guessed_value_str)
+            i += 1
+
+            # Next line: SALDO after the transaction.
+            if i >= len(lines):
+                break
+            saldo_str = lines[i].strip()
+            saldo_str = re.sub(r'A$', '', saldo_str)
+            i += 1
+
+            # Determine if this amount is a debit or a credit based on the change in balance.
+            guessed_value = self._convert_currency(guessed_value_str)
+            current_saldo = self._convert_currency(saldo_str)
+            difference = current_saldo - previous_saldo
+            debitos = ""
+            creditos = ""
+            if difference > 0:
+                creditos = guessed_value_str
+            elif difference < 0:
+                debitos = guessed_value_str
+
+            record = {
+                "FECHA": fecha,
+                "MOVIMIENTOS": movimientos,
+                "COMPROB.": comprob,
+                "DEBITOS": debitos,
+                "CREDITOS": creditos,
+                "SALDO": saldo_str
+            }
+            records.append(record)
+            previous_saldo = current_saldo
+
         return [convert_to_canonical_format(records)]
-    
+
     def _convert_currency(self, value: str) -> float:
         """
-        Convert a currency string like '55.348,98' or '1.234,56-' to a float 55348.98 or -1234.56
+        Convert a currency string like '55.348,98' or '1.234,56-' to a float.
+        Also removes a trailing "A" if present.
         """
         if not value:
             return 0.0
+        # Remove trailing A if exists.
+        value = re.sub(r'A$', '', value)
         negative = False
         if value.endswith('-'):
             negative = True
@@ -147,41 +152,3 @@ class NacionParser:
             return -number if negative else number
         except (ValueError, AttributeError):
             return 0.0
-
-
-
-
-expected_output = [
-    {
-        "FECHA": "",
-        "MOVIMIENTOS": "SALDO ANTERIOR",
-        "COMPROB.": "",
-        "DEBITOS": "",
-        "CREDITOS": "",
-        "SALDO": "55.348,98"
-    },
-    {
-        "FECHA": "08/05/24",
-        "MOVIMIENTOS": "BCA.E.TR.O/BCO -SUC 0001",
-        "COMPROB.": "204046",
-        "DEBITOS": "",
-        "CREDITOS": "400.000,00",
-        "SALDO": "455.348,98"
-    },
-    {
-        "FECHA": "28/05/24",
-        "MOVIMIENTOS": "DB PM/TOT RESUMEN TCORP",
-        "COMPROB.": "1120",
-        "DEBITOS": "93.472,38",
-        "CREDITOS": "",
-        "SALDO": "361.876,60"
-    },
-    {
-        "FECHA": "28/05/24",
-        "MOVIMIENTOS": "DB PM/TOT RESUMEN TCORP",
-        "COMPROB.": "1120",
-        "DEBITOS": "93.472,38",
-        "CREDITOS": "",
-        "SALDO": "361.876,60"
-    }
-]
