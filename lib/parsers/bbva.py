@@ -27,7 +27,7 @@ class BBVAParser:
     def parse(self, data: List[str]) -> List[List[Dict[str, str]]]:
         # Combine all data into a single string
         raw_text = "\n".join(data)
-        
+
         # Extract year
         year_matches = re.findall(r'Información al: \d{2}/\d{2}/(\d{4})', raw_text)
         if year_matches:
@@ -39,34 +39,34 @@ class BBVAParser:
         movimientos_start = re.search(r'Movimientos en cuentas', raw_text, re.IGNORECASE)
         if not movimientos_start:
             return []
-            
+
         # Start processing from after "Movimientos en cuentas"
         current_pos = movimientos_start.end()
         all_transactions = []
-        
+
         while True:
             # Find next "SALDO ANTERIOR" section
             saldo_anterior_start = re.search(r'SALDO ANTERIOR', raw_text[current_pos:], re.IGNORECASE)
             if not saldo_anterior_start:
                 break
-                
+
             # Update current position to start of this section
             current_pos += saldo_anterior_start.start()
-            
+
             # Find next "TOTAL MOVIMIENTOS"
             movimientos_end = re.search(r'TOTAL MOVIMIENTOS', raw_text[current_pos:], re.IGNORECASE)
             if not movimientos_end:
                 break
-                
+
             # Extract the account section
             account_text = raw_text[current_pos:current_pos + movimientos_end.end()]
-            
+
             # Update position for next iteration
             current_pos += movimientos_end.end()
-            
+
             # Process this section
             transactions = self.process_account_section(account_text, year)
-            
+
             # After processing this section, add it to all_transactions
             if transactions:
                 all_transactions.append(convert_to_canonical_format(transactions))
@@ -75,14 +75,14 @@ class BBVAParser:
 
     def process_account_section(self, account_text: str, year: int) -> List[Dict[str, str]]:
         lines = [line.strip() for line in account_text.split('\n') if line.strip()]
-        
+
         # Initialize variables for this section
         transactions = []
         current_transaction = {}
         buffer_concept = []
         i = 0  # Initialize counter
         total_lines = len(lines)  # Get total number of lines
-        
+
         # Handle "SALDO ANTERIOR"
         while i < total_lines:
             if lines[i].lower() == "saldo anterior":
@@ -115,7 +115,7 @@ class BBVAParser:
                         buffer_concept = []
                     transactions.append(current_transaction)
                     current_transaction = {}
-                
+
                 # Start a new transaction
                 fecha = date_match.group(1)
                 if date_match.group(2):
@@ -124,14 +124,14 @@ class BBVAParser:
                 else:
                     # Append the extracted year
                     fecha_full = f"{fecha}/{year}"
-                
+
                 current_transaction['FECHA'] = fecha_full
                 current_transaction['ORIGEN'] = ""
                 current_transaction['CONCEPTO'] = ""
                 current_transaction['DÉBITO'] = ""
                 current_transaction['CRÉDITO'] = ""
                 current_transaction['SALDO'] = ""
-                
+
                 i += 1
                 # Check if next line is ORIGEN or part of CONCEPTO
                 if i < total_lines:
@@ -157,7 +157,7 @@ class BBVAParser:
                         # The next line should be SALDO
                         if i < total_lines:
                             saldo_line = lines[i]
-                            saldo_match = re.match(r'^\d{1,3}(?:\.\d{3})*,\d{2}$', saldo_line)
+                            saldo_match = re.match(r'^-?\d{1,3}(?:\.\d{3})*,\d{2}$', saldo_line)
                             if saldo_match:
                                 current_transaction['SALDO'] = saldo_line
                                 i += 1
@@ -170,19 +170,19 @@ class BBVAParser:
             else:
                 # Non-date line outside of transaction, skip
                 i += 1
-        
+
         # After loop ends, append the last transaction if exists
         if current_transaction:
             if buffer_concept:
                 current_transaction['CONCEPTO'] = ' '.join(buffer_concept).strip()
             transactions.append(current_transaction)
-        
+
         # Clean transactions: remove any incomplete transactions
         cleaned_transactions = []
         for tx in transactions:
-            if tx['CONCEPTO'] and tx['SALDO']:
+            if tx['CONCEPTO'] and (tx['SALDO'] or tx['DÉBITO'] or tx['CRÉDITO']):
                 cleaned_transactions.append(tx)
-        
+
         # Add "SALDO AL ..." as the last transaction
         saldo_al_match = re.search(r'SALDO AL .* DE .*', account_text, re.IGNORECASE)
         if saldo_al_match:
