@@ -9,7 +9,7 @@ def convert_to_canonical_format(data: Dict) -> Dict:
             "FECHA": row["FECHA"],
             "DETALLE": row["DESCRIPCION"],
             "REFERENCIA": row["COMBTE"],
-            "DEBITOS": float(row["DEBITO"].replace('.', '').replace(',', '.')) if row["DEBITO"] else "", 
+            "DEBITOS": float(row["DEBITO"].replace('.', '').replace(',', '.')) if row["DEBITO"] else "",
             "CREDITOS": float(row["CREDITO"].replace('.', '').replace(',', '.')) if row["CREDITO"] else "",
             "SALDO": float(row["SALDO"].replace('.', '').replace(',', '.')) if row["SALDO"] else ""
         }
@@ -58,6 +58,8 @@ class CredicoopParser:
         # Function to parse currency strings to float
         def parse_currency(value):
             try:
+                # Replace any kind of minus sign with standard minus
+                value = value.replace('−', '-')
                 return float(value.replace('.', '').replace(',', '.'))
             except:
                 return None
@@ -96,7 +98,7 @@ class CredicoopParser:
                 elif "SALDO AL" in line:
                     # Extract the date and balance for SALDO FINAL
                     # Example: "SALDO AL 31/05/24 9.910.825,60"
-                    saldo_final_match = re.search(r'SALDO AL\s+(\d{2}/\d{2}/\d{2})\s+([\d\.,\-]+)', line)
+                    saldo_final_match = re.search(r'SALDO AL\s+(\d{2}/\d{2}/\d{2})\s+([\d\.,\-−]+)', line)
                     if saldo_final_match:
                         date = saldo_final_match.group(1)
                         saldo_final_str = saldo_final_match.group(2)
