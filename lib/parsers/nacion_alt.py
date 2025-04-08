@@ -1,6 +1,5 @@
 import streamlit as st
 from typing import Dict, List
-from lib.parsers.nacion_alt import NacionParser as NacionParserAlt
 import re
 
 def convert_to_canonical_format(data: List[Dict[str, str]]) -> List[Dict[str, str]]:
@@ -45,9 +44,10 @@ class NacionParser:
         # Find the "SALDO ANTERIOR" header and its following line (the initial balance)
         while i < len(lines):
             line = lines[i].strip()
-            if line.upper() == "SALDO ANTERIOR":
-                i += 1  # The next line should contain the amount.
-                saldo_line = lines[i].strip() if i < len(lines) else "0,00"
+            if "SALDO ANTERIOR" in line:
+                # Extract the saldo value from the end of the line
+                parts = line.split()
+                saldo_line = parts[-1] if parts else "0,00"
                 saldo_line = re.sub(r'A$', '', saldo_line)  # remove trailing A if present
                 records.append({
                     "FECHA": "",
@@ -75,52 +75,65 @@ class NacionParser:
                 i += 1
                 continue
 
-            # Line with date and initial part of MOVIMIENTOS.
+            # Process the entire transaction row which has all fields on one line
             parts = line.split()
-            fecha = parts[0]
-            movimientos = " ".join(parts[1:])
-            i += 1
-
-            # If the next line is not an integer, then it is a continuation of MOVIMIENTOS.
-            if i < len(lines) and not lines[i].strip().isdigit():
-                movimientos += " " + lines[i].strip()
-                i += 1
-
-            # Next line must be COMPROB. (always an integer).
-            if i >= len(lines):
-                break
-            comprob_line = lines[i].strip()
-            if not comprob_line.isdigit():
+            if len(parts) < 4:  # Need at least date, description, comprob, and saldo
                 i += 1
                 continue
-            comprob = comprob_line
-            i += 1
 
-            # Next line: transaction amount.
-            if i >= len(lines):
-                break
-            guessed_value_str = lines[i].strip()
-            # Remove trailing "A" if present.
-            guessed_value_str = re.sub(r'A$', '', guessed_value_str)
-            i += 1
+            fecha = parts[0]
 
-            # Next line: SALDO after the transaction.
-            if i >= len(lines):
-                break
-            saldo_str = lines[i].strip()
+            # Find the last numeric value which should be the SALDO
+            saldo_str = parts[-1]
             saldo_str = re.sub(r'A$', '', saldo_str)
-            i += 1
 
-            # Determine if this amount is a debit or a credit based on the change in balance.
-            guessed_value = self._convert_currency(guessed_value_str)
-            current_saldo = self._convert_currency(saldo_str)
-            difference = current_saldo - previous_saldo
+            # Find COMPROB which is the last integer in the line (ignoring decimals/currency)
+            comprob = "0"  # Default value
+            for part in reversed(parts[1:-1]):  # Skip date at start and saldo at end
+                # Check if it's a pure integer (no commas or periods)
+                if part.isdigit():
+                    comprob = part
+                    break
+
+            # Find the index of COMPROB to extract MOVIMIENTOS properly
+            comprob_index = -1
+            for j, part in enumerate(parts):
+                if part == comprob and j > 0:  # Skip the first element (date)
+                    comprob_index = j
+                    break
+
+            # Extract MOVIMIENTOS (everything between date and comprob or before saldo)
+            if comprob_index > 1:
+                movimientos = " ".join(parts[1:comprob_index])
+            else:
+                # If comprob wasn't found, assume movimientos is everything except date and saldo
+                movimientos = " ".join(parts[1:-1])
+
+            # Handle DEBITOS and CREDITOS based on the change in balance
             debitos = ""
             creditos = ""
-            if difference > 0:
-                creditos = guessed_value_str
-            elif difference < 0:
-                debitos = guessed_value_str
+
+            # Try to find amount values (with decimal points or commas)
+            amount_index = -1
+            for j in range(len(parts) - 2, 0, -1):  # Search backward from saldo
+                # Look for a value that might be currency (contains a comma or dot)
+                if "," in parts[j] or "." in parts[j]:
+                    # Skip if this is the COMPROB we already found
+                    if j != comprob_index:
+                        amount_index = j
+                        break
+
+            if amount_index != -1:
+                amount_str = parts[amount_index]
+                amount_str = re.sub(r'A$', '', amount_str)
+
+                # Determine if this is a debit or credit based on the change in balance
+                current_saldo = self._convert_currency(saldo_str)
+                if previous_saldo is not None:
+                    if current_saldo > previous_saldo:
+                        creditos = amount_str
+                    elif current_saldo < previous_saldo:
+                        debitos = amount_str
 
             record = {
                 "FECHA": fecha,
@@ -131,12 +144,10 @@ class NacionParser:
                 "SALDO": saldo_str
             }
             records.append(record)
-            previous_saldo = current_saldo
+            previous_saldo = self._convert_currency(saldo_str)
+            i += 1
 
-        if records:
-            return [convert_to_canonical_format(records)]
-        else:
-            return NacionParserAlt().parse(data)
+        return [convert_to_canonical_format(records)]
 
     def _convert_currency(self, value: str) -> float:
         """
