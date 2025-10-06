@@ -7,13 +7,13 @@ from sqlalchemy import text
 
 def verify_password_local(username, password):
     conn = st.connection('postgres')
-    with conn.session as session:
-        hashed_password = hashlib.sha256(password.encode()).hexdigest()
-        result = session.execute(
-            text('SELECT * FROM users WHERE username = :username AND password = :password'),
-            {'username': username, 'password': hashed_password}
-        ).fetchone()
-        return result is not None
+    session = conn.session
+    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    result = session.execute(
+        text('SELECT * FROM users WHERE username = :username AND password = :password'),
+        {'username': username, 'password': hashed_password}
+    ).fetchone()
+    return result is not None
 
 def verify_password_api(username, password):
     api_url = "https://api.sigeweb.net/oauth/token"

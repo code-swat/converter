@@ -26,9 +26,9 @@ if st.session_state.logged_in and st.session_state.username == "admin":
 
     # Get all users
     conn = st.connection('postgres')
-    with conn.session as session:
-        users = session.execute(text("SELECT username FROM users WHERE username != 'admin'")).fetchall()
-        usernames = [user[0] for user in users]
+    session = conn.session
+    users = session.execute(text("SELECT username FROM users WHERE username != 'admin'")).fetchall()
+    usernames = [user[0] for user in users]
 
     # User filter
     col1, col2 = st.columns([3, 1])
@@ -43,26 +43,26 @@ if st.session_state.logged_in and st.session_state.username == "admin":
     # Get usage data
     start_date, end_date = get_month_range(selected_month)
 
-    with conn.session as session:
-        query = """
-            SELECT u.user_name, u.timestamp, u.stats
-            FROM usages u
-            WHERE u.timestamp BETWEEN :start_date AND :end_date
-        """
+    session = conn.session
+    query = """
+        SELECT u.user_name, u.timestamp, u.stats
+        FROM usages u
+        WHERE u.timestamp BETWEEN :start_date AND :end_date
+    """
 
-        if selected_user != "All Users":
-            query += " AND u.user_name = :username"
-        if exclude_admin:
-            query += " AND u.user_name != 'admin'"
+    if selected_user != "All Users":
+        query += " AND u.user_name = :username"
+    if exclude_admin:
+        query += " AND u.user_name != 'admin'"
 
-        params = {
-            'start_date': start_date,
-            'end_date': end_date
-        }
-        if selected_user != "All Users":
-            params['username'] = selected_user
+    params = {
+        'start_date': start_date,
+        'end_date': end_date
+    }
+    if selected_user != "All Users":
+        params['username'] = selected_user
 
-        results = session.execute(text(query), params).fetchall()
+    results = session.execute(text(query), params).fetchall()
 
     if results:
         # Create DataFrame with parsed JSON stats
