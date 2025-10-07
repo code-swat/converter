@@ -4,16 +4,20 @@ import requests
 import base64
 
 from sqlalchemy import text
+from config.database import retry_db_operation
 
 def verify_password_local(username, password):
-    conn = st.connection('postgres')
-    session = conn.session
-    hashed_password = hashlib.sha256(password.encode()).hexdigest()
-    result = session.execute(
-        text('SELECT * FROM users WHERE username = :username AND password = :password'),
-        {'username': username, 'password': hashed_password}
-    ).fetchone()
-    return result is not None
+    def _verify():
+        conn = st.connection('postgres')
+        session = conn.session
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        result = session.execute(
+            text('SELECT * FROM users WHERE username = :username AND password = :password'),
+            {'username': username, 'password': hashed_password}
+        ).fetchone()
+        return result is not None
+
+    return retry_db_operation(_verify)
 
 def verify_password_api(username, password):
     api_url = "https://api.sigeweb.net/oauth/token"

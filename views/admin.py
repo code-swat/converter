@@ -4,6 +4,7 @@ import json
 from sqlalchemy import text
 from datetime import datetime, timedelta
 from lib.data.usage import usage_tracker
+from config.database import retry_db_operation
 
 def get_month_range(selected_date):
     start_date = selected_date.replace(day=1)
@@ -25,10 +26,13 @@ if st.session_state.logged_in and st.session_state.username == "admin":
     )
 
     # Get all users
-    conn = st.connection('postgres')
-    session = conn.session
-    users = session.execute(text("SELECT username FROM users WHERE username != 'admin'")).fetchall()
-    usernames = [user[0] for user in users]
+    def _get_users():
+        conn = st.connection('postgres')
+        session = conn.session
+        users = session.execute(text("SELECT username FROM users WHERE username != 'admin'")).fetchall()
+        return [user[0] for user in users]
+
+    usernames = retry_db_operation(_get_users)
 
     # User filter
     col1, col2 = st.columns([3, 1])
@@ -43,26 +47,30 @@ if st.session_state.logged_in and st.session_state.username == "admin":
     # Get usage data
     start_date, end_date = get_month_range(selected_month)
 
-    session = conn.session
-    query = """
-        SELECT u.user_name, u.timestamp, u.stats
-        FROM usages u
-        WHERE u.timestamp BETWEEN :start_date AND :end_date
-    """
+    def _get_usage_data():
+        conn = st.connection('postgres')
+        session = conn.session
+        query = """
+            SELECT u.user_name, u.timestamp, u.stats
+            FROM usages u
+            WHERE u.timestamp BETWEEN :start_date AND :end_date
+        """
 
-    if selected_user != "All Users":
-        query += " AND u.user_name = :username"
-    if exclude_admin:
-        query += " AND u.user_name != 'admin'"
+        if selected_user != "All Users":
+            query += " AND u.user_name = :username"
+        if exclude_admin:
+            query += " AND u.user_name != 'admin'"
 
-    params = {
-        'start_date': start_date,
-        'end_date': end_date
-    }
-    if selected_user != "All Users":
-        params['username'] = selected_user
+        params = {
+            'start_date': start_date,
+            'end_date': end_date
+        }
+        if selected_user != "All Users":
+            params['username'] = selected_user
 
-    results = session.execute(text(query), params).fetchall()
+        return session.execute(text(query), params).fetchall()
+
+    results = retry_db_operation(_get_usage_data)
 
     if results:
         # Create DataFrame with parsed JSON stats
